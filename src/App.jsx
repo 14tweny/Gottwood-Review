@@ -145,6 +145,7 @@ function RatingBar({ value, onChange }) {
 
 function CategorySection({ catName, data, onSave, saveKey, saveStatuses }) {
   const status = saveStatuses[saveKey] ?? "idle";
+  const [open, setOpen] = useState(false);
   const [local, setLocal] = useState({
     rating: data?.rating ?? null,
     worked_well: data?.worked_well ?? "",
@@ -170,74 +171,105 @@ function CategorySection({ catName, data, onSave, saveKey, saveStatuses }) {
   };
 
   const rating = getRating(local.rating);
+  const hasContent = local.worked_well || local.needs_improvement || local.notes;
 
   return (
-    <div className="cat-section" style={{
+    <div style={{
       background: "#111113",
       borderRadius: 12,
-      border: "1px solid #1e1e22",
+      border: `1px solid ${open ? "#2a2a30" : "#1e1e22"}`,
       overflow: "hidden",
+      transition: "border-color 0.2s",
     }}>
-      {/* Category header */}
-      <div style={{
-        padding: "14px 18px",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        borderBottom: "1px solid #1a1a1e",
-      }}>
-        <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: "0.06em", flex: 1, color: "#e8e4df" }}>
+      {/* Collapsed header — always visible, tap to open */}
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 12,
+          padding: "16px 18px", background: "none", border: "none",
+          cursor: "pointer", textAlign: "left",
+        }}
+      >
+        {/* Rating dot indicator */}
+        <div style={{
+          width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+          background: rating ? rating.color : "#252528",
+          boxShadow: rating ? `0 0 6px ${rating.color}66` : "none",
+          transition: "background 0.2s, box-shadow 0.2s",
+        }} />
+
+        <span style={{
+          fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 13,
+          letterSpacing: "0.06em", flex: 1,
+          color: rating || hasContent ? "#e8e4df" : "#555",
+        }}>
           {catName.toUpperCase()}
         </span>
+
+        {/* Status indicators */}
         {status === "saving" && <span style={{ fontSize: 10, color: "#555", fontFamily: "'Syne', sans-serif" }}>SAVING…</span>}
         {status === "saved" && <span className="save-pulse" style={{ fontSize: 10, color: "#22c55e", fontFamily: "'Syne', sans-serif" }}>SAVED</span>}
-        {rating && (
+
+        {rating && !open && (
           <span style={{
             fontSize: 10, fontWeight: 700, fontFamily: "'Syne', sans-serif",
-            color: rating.color, background: rating.color + "18",
-            border: `1px solid ${rating.color}44`,
-            padding: "2px 8px", borderRadius: 20, letterSpacing: "0.06em",
+            color: rating.color, letterSpacing: "0.06em",
           }}>
             {rating.label.toUpperCase()}
           </span>
         )}
-      </div>
 
-      <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
-        {/* Rating */}
-        <RatingBar value={local.rating} onChange={(v) => update({ rating: v })} />
+        {hasContent && !open && !rating && (
+          <span style={{ fontSize: 10, color: "#444", fontFamily: "'Syne', sans-serif", letterSpacing: "0.06em" }}>NOTES</span>
+        )}
 
-        {/* Notes grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={labelSt}>✓ What worked well</label>
-            <textarea
-              value={local.worked_well}
-              onChange={e => update({ worked_well: e.target.value })}
-              placeholder="What went well this year..."
-              style={taSt("#0a1a12")}
-            />
+        <span style={{
+          color: "#333", fontSize: 12, fontFamily: "'Syne', sans-serif",
+          transform: open ? "rotate(180deg)" : "rotate(0deg)",
+          transition: "transform 0.2s",
+          display: "inline-block", marginLeft: 4,
+        }}>▼</span>
+      </button>
+
+      {/* Expanded content */}
+      {open && (
+        <div style={{ padding: "0 18px 18px", display: "flex", flexDirection: "column", gap: 14, borderTop: "1px solid #1a1a1e" }}>
+          <div style={{ paddingTop: 16 }}>
+            <RatingBar value={local.rating} onChange={(v) => update({ rating: v })} />
           </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={labelSt}>✓ What worked well</label>
+              <textarea
+                value={local.worked_well}
+                onChange={e => update({ worked_well: e.target.value })}
+                placeholder="What went well this year..."
+                style={taSt("#0a1a12")}
+              />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={labelSt}>↑ Needs improvement</label>
+              <textarea
+                value={local.needs_improvement}
+                onChange={e => update({ needs_improvement: e.target.value })}
+                placeholder="What to fix next year..."
+                style={taSt("#1a0e0e")}
+              />
+            </div>
+          </div>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={labelSt}>↑ Needs improvement</label>
+            <label style={labelSt}>↗ Notes, suppliers & ideas</label>
             <textarea
-              value={local.needs_improvement}
-              onChange={e => update({ needs_improvement: e.target.value })}
-              placeholder="What to fix next year..."
-              style={taSt("#1a0e0e")}
+              value={local.notes}
+              onChange={e => update({ notes: e.target.value })}
+              placeholder="Supplier contacts, costs, specs, ideas..."
+              style={{ ...taSt("#0e0e1a"), minHeight: 52 }}
             />
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <label style={labelSt}>↗ Notes, suppliers & ideas</label>
-          <textarea
-            value={local.notes}
-            onChange={e => update({ notes: e.target.value })}
-            placeholder="Supplier contacts, costs, specs, ideas..."
-            style={{ ...taSt("#0e0e1a"), minHeight: 52 }}
-          />
-        </div>
-      </div>
+      )}
     </div>
   );
 }
