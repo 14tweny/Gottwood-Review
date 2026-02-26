@@ -466,8 +466,10 @@ export default function App() {
                 transition: "all 0.15s",
               }}
             >
-              {f.name}
-            </button>
+{f.id === "gottwood" 
+  ? <img src="/Gottwood_Logo_White_TYPE.png" style={{height: 18, opacity: activeFestival === "gottwood" ? 1 : 0.4}} />
+  : f.name
+}            </button>
           ))}
         </div>
 
