@@ -506,54 +506,86 @@ export default function App() {
             {loading ? (
               <div style={{ textAlign: "center", padding: 60, color: "#444", fontFamily: "'Syne', sans-serif", fontSize: 12, letterSpacing: "0.1em" }}>LOADING…</div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {festivalAreas.map(areaName => {
                   const { rated, total } = areaScore(areaName);
                   const color = areaAvgColor(areaName);
                   const pct = total > 0 ? (rated / total) * 100 : 0;
                   return (
-                    <button
-                      key={areaName}
-                      className="area-card"
-                      onClick={() => { setSelectedArea(areaName); setScreen("area-detail"); setEditingCats(false); }}
-                      style={{
-                        background: "#111113", border: "1px solid #1e1e22",
-                        borderRadius: 12, cursor: "pointer", textAlign: "left",
-                        padding: "18px 18px 14px", display: "flex", flexDirection: "column", gap: 12,
-                      }}
-                    >
-                      <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: "#e8e4df", lineHeight: 1.3 }}>{areaName}</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={{ height: 3, background: "#1e1e22", borderRadius: 2, overflow: "hidden" }}>
+                    <div key={areaName} style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                      <button
+                        className="area-card"
+                        onClick={() => { setSelectedArea(areaName); setScreen("area-detail"); setEditingCats(false); }}
+                        style={{
+                          flex: 1, background: "#111113", border: "1px solid #1e1e22",
+                          borderRadius: 12, cursor: "pointer", textAlign: "left",
+                          padding: "16px 18px", display: "flex", alignItems: "center", gap: 16,
+                        }}
+                      >
+                        {/* Progress dot */}
+                        <div style={{
+                          width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+                          background: rated > 0 ? (color ?? "#555") : "#252528",
+                          boxShadow: rated > 0 && color ? `0 0 6px ${color}66` : "none",
+                        }} />
+
+                        {/* Name */}
+                        <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: rated > 0 ? "#e8e4df" : "#666", flex: 1 }}>
+                          {areaName}
+                        </span>
+
+                        {/* Progress bar */}
+                        <div style={{ width: 80, height: 3, background: "#1e1e22", borderRadius: 2, overflow: "hidden", flexShrink: 0 }}>
                           <div style={{ height: "100%", width: `${pct}%`, background: color ?? "#333", borderRadius: 2, transition: "width 0.4s" }} />
                         </div>
-                        <div style={{ fontSize: 10, fontFamily: "'Syne', sans-serif", fontWeight: 600, color: rated > 0 ? (color ?? "#888") : "#333", letterSpacing: "0.06em" }}>
-                          {rated > 0 ? `${rated}/${total} RATED` : "NOT STARTED"}
-                        </div>
-                      </div>
-                    </button>
+
+                        {/* Label */}
+                        <span style={{ fontSize: 10, fontFamily: "'Syne', sans-serif", fontWeight: 600, color: rated > 0 ? (color ?? "#888") : "#2a2a2e", letterSpacing: "0.06em", minWidth: 60, textAlign: "right" }}>
+                          {rated > 0 ? `${rated}/${total}` : "—"}
+                        </span>
+
+                        <span style={{ color: "#2a2a2e", fontSize: 14 }}>→</span>
+                      </button>
+
+                      {/* Delete button */}
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Delete "${areaName}"? This won't remove saved data from the database.`)) {
+                            setAreas(prev => ({ ...prev, [activeFestival]: prev[activeFestival].filter(a => a !== areaName) }));
+                          }
+                        }}
+                        title="Delete area"
+                        style={{
+                          background: "#111113", border: "1px solid #1e1e22", borderRadius: 12,
+                          color: "#333", cursor: "pointer", padding: "0 14px", fontSize: 16,
+                          transition: "all 0.15s", flexShrink: 0,
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = "#ef444444"; e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "#1a1010"; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = "#1e1e22"; e.currentTarget.style.color = "#333"; e.currentTarget.style.background = "#111113"; }}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   );
                 })}
 
-                {/* Add area card */}
+                {/* Add area */}
                 {addingArea ? (
-                  <div style={{ background: "#111113", border: "1px dashed #333", borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ background: "#111113", border: "1px dashed #333", borderRadius: 12, padding: 16, display: "flex", gap: 8, alignItems: "center" }}>
                     <input
                       autoFocus value={newAreaName} onChange={e => setNewAreaName(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter") addArea(); if (e.key === "Escape") setAddingArea(false); }}
                       placeholder="Area name..."
-                      style={{ background: "#0c0c0e", border: "1px solid #333", borderRadius: 7, color: "#f0ede8", padding: "8px 10px", fontSize: 13, width: "100%" }}
+                      style={{ flex: 1, background: "#0c0c0e", border: "1px solid #333", borderRadius: 7, color: "#f0ede8", padding: "8px 10px", fontSize: 13 }}
                     />
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={addArea} style={{ flex: 1, background: "#f0ede8", color: "#0c0c0e", border: "none", borderRadius: 7, padding: "7px", fontSize: 12, fontWeight: 700, fontFamily: "'Syne', sans-serif", cursor: "pointer" }}>ADD</button>
-                      <button onClick={() => setAddingArea(false)} style={{ flex: 1, background: "transparent", color: "#555", border: "1px solid #252528", borderRadius: 7, padding: "7px", fontSize: 12, cursor: "pointer" }}>CANCEL</button>
-                    </div>
+                    <button onClick={addArea} style={{ background: "#f0ede8", color: "#0c0c0e", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: "'Syne', sans-serif", cursor: "pointer" }}>ADD</button>
+                    <button onClick={() => setAddingArea(false)} style={{ background: "transparent", color: "#555", border: "1px solid #252528", borderRadius: 7, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>✕</button>
                   </div>
                 ) : (
                   <button
                     className="area-card"
                     onClick={() => setAddingArea(true)}
-                    style={{ background: "transparent", border: "1px dashed #252528", borderRadius: 12, cursor: "pointer", padding: "18px", color: "#444", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 80 }}
+                    style={{ background: "transparent", border: "1px dashed #252528", borderRadius: 12, cursor: "pointer", padding: "14px 18px", color: "#444", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
                   >
                     + ADD AREA
                   </button>
