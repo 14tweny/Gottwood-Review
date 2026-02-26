@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
+import SiteMap from "./SiteMap.jsx";
 import { GOTTWOOD_LOGO, PEEP_LOGO, FOURTEEN_TWENTY_LOGO } from "./logos.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -694,6 +695,7 @@ export default function App() {
   const [taskSaving, setTaskSaving]   = useState({});
   const [loading, setLoading]         = useState(false);
   const [editingCats, setEditingCats] = useState(false);
+  const [mapView, setMapView]         = useState(false);
   const [newCatName, setNewCatName]   = useState("");
 
   // Identity
@@ -1109,14 +1111,22 @@ export default function App() {
             <div style={{fontWeight:800,fontSize:26,color:"#f0ede8",marginBottom:4}}>{dept?.name}</div>
             <div style={{fontSize:13,color:"#555"}}>{festivalAreas.length} areas · {activeYear} · {tracker?"Progress Tracker":"Review"}{isSupplier&&supplierToken?.filter?` · ${supplierToken.filter}`:""}</div>
           </div>
-          {!isSupplier&&(
-            <button onClick={()=>updateAreas(prev=>[...prev].sort((a,b)=>a.localeCompare(b)))}
-              style={{marginTop:6,background:"transparent",border:"1px solid #252528",borderRadius:8,color:"#555",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.06em",whiteSpace:"nowrap",flexShrink:0}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
-              A → Z
-            </button>
-          )}
+          <div style={{display:"flex",gap:8,marginTop:6,flexShrink:0}}>
+            {!isSupplier&&festival?.id==="gottwood"&&(
+              <button onClick={()=>setMapView(v=>!v)}
+                style={{background:mapView?"#f0ede811":"transparent",border:`1px solid ${mapView?"#888":"#252528"}`,borderRadius:8,color:mapView?"#f0ede8":"#555",fontSize:11,fontWeight:700,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.08em",whiteSpace:"nowrap",transition:"all 0.15s"}}>
+                {mapView?"☰ LIST":"▦ MAP"}
+              </button>
+            )}
+            {!isSupplier&&!mapView&&(
+              <button onClick={()=>updateAreas(prev=>[...prev].sort((a,b)=>a.localeCompare(b)))}
+                style={{background:"transparent",border:"1px solid #252528",borderRadius:8,color:"#555",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.06em",whiteSpace:"nowrap"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                A → Z
+              </button>
+            )}
+          </div>
         </div>
         {tracker&&!isSupplier&&(
           <div style={{marginBottom:18,padding:"14px 18px",background:"#111113",border:"1px solid #1e1e22",borderRadius:12}}>
@@ -1135,6 +1145,23 @@ export default function App() {
                   onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>↓ PDF</button>
               </div>);
             })()}
+          </div>
+        )}
+        {mapView&&festival?.id==="gottwood"&&(
+          <div style={{marginBottom:16}}>
+            <SiteMap
+              festival={festival}
+              areas={festivalAreas}
+              tracker={tracker}
+              getAreaColor={areaName => tracker ? areaRAGColor(areaName) : areaReviewColor(areaName)}
+              onAreaTap={areaName => {
+                if(festivalAreas.includes(areaName)){
+                  setSelectedArea(areaName);
+                  setScreen("area-detail");
+                  setEditingCats(false);
+                }
+              }}
+            />
           </div>
         )}
         {loading?(<div style={{textAlign:"center",padding:60,color:"#444",fontSize:12,letterSpacing:"0.1em"}}>LOADING…</div>):(
