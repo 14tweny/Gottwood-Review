@@ -99,9 +99,9 @@ const css = `
 
 function FestivalLogo({ festival, active }) {
   const opacity = active ? 1 : 0.4;
-  if (festival.id === "gottwood") return <img src={GOTTWOOD_LOGO} style={{ height: 14, opacity, display: "block" }} alt="Gottwood" />;
-  if (festival.id === "peep") return <img src={PEEP_LOGO} style={{ height: 14, opacity, display: "block" }} alt="Peep" />;
-  return <span style={{ opacity, fontSize: 11, fontFamily: "'Geist', sans-serif", fontWeight: 700, letterSpacing: "0.08em" }}>{festival.name.toUpperCase()}</span>;
+  if (festival.id === "gottwood") return <img src={GOTTWOOD_LOGO} style={{ height: 42, opacity, display: "block" }} alt="Gottwood" />;
+  if (festival.id === "peep") return <img src={PEEP_LOGO} style={{ height: 42, opacity, display: "block" }} alt="Peep" />;
+  return <span style={{ opacity, fontSize: 20, fontFamily: "'Geist', sans-serif", fontWeight: 700, letterSpacing: "0.08em" }}>{festival.name.toUpperCase()}</span>;
 }
 
 function RatingBar({ value, onChange }) {
@@ -284,6 +284,166 @@ const taSt = (bg) => ({
   borderRadius: 8, color: "#c8c4bf", fontFamily: "'Geist', sans-serif",
   fontSize: 13, padding: "10px 12px", lineHeight: 1.6, boxSizing: "border-box",
 });
+
+// ─── PDF Export ──────────────────────────────────────────────────────────────
+
+async function exportToPDF({ festival, year, areas, reviewData, getCats, getAllReviewData }) {
+  // Dynamically load jsPDF
+  if (!window.jspdf) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageW = 210;
+  const pageH = 297;
+  const margin = 16;
+  const contentW = pageW - margin * 2;
+  let y = margin;
+
+  const RATINGS = [
+    { value: 1, label: "Poor" },
+    { value: 2, label: "Needs Work" },
+    { value: 3, label: "Average" },
+    { value: 4, label: "Good" },
+    { value: 5, label: "Excellent" },
+  ];
+
+  const RATING_COLORS = {
+    1: [239, 68, 68],
+    2: [249, 115, 22],
+    3: [234, 179, 8],
+    4: [132, 204, 18],
+    5: [34, 197, 94],
+  };
+
+  function checkPage(needed = 10) {
+    if (y + needed > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  }
+
+  function drawLine(color = [30, 30, 34]) {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y, pageW - margin, y);
+    y += 3;
+  }
+
+  // ── Cover header ──
+  doc.setFillColor(10, 10, 10);
+  doc.rect(0, 0, pageW, 36, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(240, 237, 232);
+  doc.text("PRODUCTION REVIEW", margin, 16);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(100, 100, 110);
+  doc.text(`${festival.name.toUpperCase()}  ·  ${year}`, margin, 25);
+  doc.setFontSize(8);
+  doc.text(`Generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`, pageW - margin, 25, { align: "right" });
+  y = 46;
+
+  // ── Areas ──
+  for (const areaName of areas) {
+    const areaId = areaName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const cats = getCats(areaName);
+    const hasAnyData = cats.some(c => {
+      const catId = c.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      const d = reviewData[`${areaId}__${catId}`];
+      return d?.rating || d?.worked_well || d?.needs_improvement || d?.notes;
+    });
+    if (!hasAnyData) continue;
+
+    checkPage(20);
+
+    // Area heading
+    doc.setFillColor(20, 20, 24);
+    doc.roundedRect(margin, y, contentW, 10, 2, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(240, 237, 232);
+    doc.text(areaName.toUpperCase(), margin + 4, y + 6.8);
+    y += 14;
+
+    for (const catName of cats) {
+      const catId = catName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      const d = reviewData[`${areaId}__${catId}`];
+      if (!d?.rating && !d?.worked_well && !d?.needs_improvement && !d?.notes) continue;
+
+      checkPage(14);
+
+      // Category row
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(180, 176, 170);
+      doc.text(catName, margin + 2, y + 4);
+
+      // Rating badge
+      if (d?.rating) {
+        const rLabel = RATINGS.find(r => r.value === d.rating)?.label ?? "";
+        const rColor = RATING_COLORS[d.rating] ?? [100,100,100];
+        doc.setFillColor(...rColor.map(c => Math.round(c * 0.15 + 10)));
+        doc.setDrawColor(...rColor);
+        doc.setLineWidth(0.3);
+        const badgeW = doc.getTextWidth(rLabel) + 6;
+        doc.roundedRect(pageW - margin - badgeW - 2, y, badgeW, 6, 1, 1, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7);
+        doc.setTextColor(...rColor);
+        doc.text(rLabel.toUpperCase(), pageW - margin - badgeW / 2 - 2, y + 4, { align: "center" });
+      }
+      y += 8;
+
+      // Text fields
+      const fields = [
+        { key: "worked_well", prefix: "✓ ", color: [60, 120, 80] },
+        { key: "needs_improvement", prefix: "↑ ", color: [140, 60, 60] },
+        { key: "notes", prefix: "↗ ", color: [60, 80, 140] },
+      ];
+
+      for (const { key, prefix, color } of fields) {
+        const text = d?.[key];
+        if (!text?.trim()) continue;
+        checkPage(8);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(...color);
+        const lines = doc.splitTextToSize(prefix + text, contentW - 6);
+        doc.text(lines, margin + 4, y + 3);
+        y += lines.length * 4.5 + 2;
+      }
+
+      // Thin separator
+      doc.setDrawColor(30, 30, 34);
+      doc.setLineWidth(0.15);
+      doc.line(margin + 2, y, pageW - margin - 2, y);
+      y += 4;
+    }
+    y += 4;
+  }
+
+  // Footer on each page
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(60, 60, 70);
+    doc.text(`${festival.name} · ${year} · 14twenty Production Review`, margin, pageH - 8);
+    doc.text(`${i} / ${totalPages}`, pageW - margin, pageH - 8, { align: "right" });
+  }
+
+  doc.save(`${festival.name.replace(/\s+/g, "-")}-${year}-production-review.pdf`);
+}
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
@@ -771,6 +931,36 @@ export default function App() {
               })}
             </div>
           )}
+
+          {/* Export to PDF */}
+          <div style={{ marginTop: 32, paddingTop: 24, borderTop: "1px solid #1a1a1e" }}>
+            <button
+              onClick={() => {
+                const allAreas = areas[activeFestival] ?? [];
+                exportToPDF({
+                  festival: FESTIVALS.find(f => f.id === activeFestival),
+                  year: activeYear,
+                  areas: allAreas,
+                  reviewData,
+                  getCats,
+                });
+              }}
+              style={{
+                width: "100%", padding: "16px 24px",
+                background: "#111113", border: "1px solid #252528",
+                borderRadius: 12, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                fontFamily: "'Geist', sans-serif", fontWeight: 600, fontSize: 13,
+                color: "#888", letterSpacing: "0.04em",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#444"; e.currentTarget.style.color = "#f0ede8"; e.currentTarget.style.background = "#161618"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#252528"; e.currentTarget.style.color = "#888"; e.currentTarget.style.background = "#111113"; }}
+            >
+              <span style={{ fontSize: 16 }}>↓</span>
+              EXPORT ALL AREAS TO PDF — {activeYear}
+            </button>
+          </div>
         </div>
       </div>
     </>
