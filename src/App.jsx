@@ -300,21 +300,23 @@ function TaskRow({ task, onChange, onDelete, userName }) {
         <button className="del-btn" onClick={onDelete} style={{ background: "none", border: "none", color: "#2a2a2e", fontSize: 14, cursor: "pointer", padding: "0 2px", flexShrink: 0, transition: "color 0.12s" }}>✕</button>
       </div>
       {expanded && (
-        <div style={{ padding: "12px 14px 14px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, borderTop: "1px solid #1a1a1e" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <label style={lbSt}>Owner</label>
-            <input value={task.owner} onChange={e => onChange({ ...task, owner: e.target.value })} placeholder="e.g. Angus" style={{ background: "#0a0a0a", border: "1px solid #252528", borderRadius: 7, color: "#f0ede8", padding: "7px 10px", fontSize: 12 }} />
+        <div style={{ padding: "12px 14px 16px", display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid #1a1a1e" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={lbSt}>Owner</label>
+              <input value={task.owner} onChange={e => onChange({ ...task, owner: e.target.value })} placeholder="e.g. Angus" style={{ background: "#0a0a0a", border: "1px solid #252528", borderRadius: 7, color: "#f0ede8", padding: "7px 10px", fontSize: 12 }} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <label style={lbSt}>Due date</label>
+              <input type="date" value={task.due} onChange={e => onChange({ ...task, due: e.target.value })} style={{ background: "#0a0a0a", border: "1px solid #252528", borderRadius: 7, color: task.due ? "#f0ede8" : "#555", padding: "7px 10px", fontSize: 12 }} />
+            </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <label style={lbSt}>Due date</label>
-            <input type="date" value={task.due} onChange={e => onChange({ ...task, due: e.target.value })} style={{ background: "#0a0a0a", border: "1px solid #252528", borderRadius: 7, color: task.due ? "#f0ede8" : "#555", padding: "7px 10px", fontSize: 12 }} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <label style={lbSt}>Notes</label>
-            <input value={task.notes} onChange={e => onChange({ ...task, notes: e.target.value })} placeholder="Add a note..." style={{ background: "#0a0a0a", border: "1px solid #252528", borderRadius: 7, color: "#f0ede8", padding: "7px 10px", fontSize: 12 }} />
+            <label style={lbSt}>Notes & Commentary</label>
+            <textarea value={task.notes} onChange={e => onChange({ ...task, notes: e.target.value })} placeholder="Add detailed notes, context, links, supplier info..." rows={3} style={{ background: "#0a0a0a", border: "1px solid #252528", borderRadius: 7, color: "#c8c4bf", padding: "9px 11px", fontSize: 13, lineHeight: 1.6, resize: "vertical", minHeight: 72 }} />
           </div>
           {task.updated_by && (
-            <div style={{ gridColumn: "1 / -1", fontSize: 10, color: "#3a3a3e", letterSpacing: "0.06em", marginTop: 4 }}>
+            <div style={{ fontSize: 10, color: "#3a3a3e", letterSpacing: "0.06em" }}>
               LAST UPDATED BY {task.updated_by.toUpperCase()}
             </div>
           )}
@@ -685,103 +687,59 @@ export default function App() {
   // ─────────────────────────────────────────────────────────────────────────
 
   if (screen === "home") {
-    const trackerYears = years.filter(isTrackerYear).sort().reverse();
-    const reviewYears  = years.filter(y=>!isTrackerYear(y)).sort().reverse().slice(0,2);
     return (
       <>
         <style>{css}</style>
         {identityOverlay}
         {passwordOverlay}
-        <div className="screen" style={{ minHeight:"100vh", background:"#0a0a0a" }}>
+        <div className="screen" style={{ minHeight:"100vh", background:"#0a0a0a", display:"flex", flexDirection:"column" }}>
+
           {/* Top bar */}
-          <div style={{ borderBottom:"1px solid #1a1a1e", padding:"0 24px" }}>
-            <div style={{ maxWidth:900, margin:"0 auto", height:60, display:"flex", alignItems:"center", gap:16 }}>
-              <img src={FOURTEEN_TWENTY_LOGO} style={{ height:30, objectFit:"contain" }} alt="14twenty" />
+          <div style={{ borderBottom:"1px solid #1a1a1e", padding:"0 24px", flexShrink:0 }}>
+            <div style={{ maxWidth:560, margin:"0 auto", height:60, display:"flex", alignItems:"center", gap:16 }}>
+              <img src={FOURTEEN_TWENTY_LOGO} style={{ height:28, objectFit:"contain" }} alt="14twenty" />
               <div style={{ flex:1 }}/>
-              <button onClick={()=>setShowIdentity(true)} style={{ background:"none", border:"1px solid #1e1e22", borderRadius:20, color:"#555", fontSize:11, fontWeight:600, padding:"4px 14px", cursor:"pointer", letterSpacing:"0.05em" }}>
+              <button onClick={()=>setShowIdentity(true)} style={{ background:"none", border:"1px solid #1e1e22", borderRadius:20, color:"#555", fontSize:11, fontWeight:600, padding:"4px 14px", cursor:"pointer", letterSpacing:"0.05em", maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                 {user ? `${user.name}${user.company ? ` · ${user.company}` : ""}` : "Set identity"} ▾
               </button>
             </div>
           </div>
 
-          <div style={{ maxWidth:900, margin:"0 auto", padding:"36px 24px 80px" }}>
+          {/* Festival picker — centred */}
+          <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"40px 24px" }}>
+            <div style={{ width:"100%", maxWidth:480 }}>
 
-            {/* Tracker section */}
-            {trackerYears.length > 0 && (
-              <div style={{ marginBottom:52 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
-                  <span style={{ fontWeight:800, fontSize:20, color:"#f0ede8" }}>Live Tracker</span>
-                  <ModeBadge tracker={true}/>
-                </div>
-                {trackerYears.map(yr => (
-                  <div key={yr} style={{ marginBottom:24 }}>
-                    <div style={{ fontWeight:700, fontSize:11, color:"#444", letterSpacing:"0.12em", marginBottom:10 }}>{yr}</div>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))", gap:10 }}>
-                      {FESTIVALS.map(f => {
-                        const{pct,done,total,blocked,ragColor}=festivalTrackerSummary(f.id,yr);
-                        const unlocked = !!unlockedFestivals[f.id];
-                        return (
-                          <button key={f.id} className="fest-card" onClick={()=>selectFestival(f.id)}
-                            style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:14, padding:"20px 20px 16px", cursor:"pointer", textAlign:"left", display:"flex", flexDirection:"column", gap:14, position:"relative" }}>
-                            {!unlocked && <span style={{ position:"absolute", top:12, right:12, fontSize:13, opacity:0.3 }}>🔒</span>}
-                            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                              <FestivalLogo festival={f} size={30}/>
-                              <div style={{ width:10, height:10, borderRadius:"50%", background:ragColor, boxShadow:ragColor!=="3a3a3e"?`0 0 8px ${ragColor}88`:"none" }}/>
-                            </div>
-                            <div>
-                              <div style={{ height:3, background:"#1e1e22", borderRadius:2, overflow:"hidden", marginBottom:8 }}>
-                                <div style={{ height:"100%", width:`${pct}%`, background:ragColor, borderRadius:2, transition:"width 0.5s" }}/>
-                              </div>
-                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                                <span style={{ fontSize:11, color:"#555", fontWeight:600 }}>{done}/{total} tasks · {pct}%</span>
-                                {blocked>0&&<Pill label={`${blocked} blocked`} color="#ef4444"/>}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+              <div style={{ textAlign:"center", marginBottom:48 }}>
+                <div style={{ fontWeight:700, fontSize:11, letterSpacing:"0.2em", color:"#333" }}>SELECT AN EVENT</div>
+              </div>
+
+              <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+                {FESTIVALS.map(f => {
+                  const unlocked = !!unlockedFestivals[f.id];
+                  return (
+                    <button key={f.id} className="fest-card" onClick={() => selectFestival(f.id)}
+                      style={{ width:"100%", padding:"36px 32px", background:"#111113", border:"1px solid #1e1e22", borderRadius:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+                      <FestivalLogo festival={f} size={52}/>
+                      <span style={{ position:"absolute", right:20, top:"50%", transform:"translateY(-50%)", fontSize:16, color:"#222" }}>
+                        {unlocked ? "→" : "🔒"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Manage links */}
+              <div style={{ marginTop:48, display:"flex", justifyContent:"center", gap:6 }}>
+                {[["Manage Years","manage-years"],["Manage Departments","manage-depts"]].map(([label,s]) => (
+                  <button key={s} onClick={()=>setScreen(s)}
+                    style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"7px 14px", cursor:"pointer", letterSpacing:"0.05em", transition:"color 0.12s, border-color 0.12s" }}
+                    onMouseEnter={e=>{ e.currentTarget.style.color="#aaa"; e.currentTarget.style.borderColor="#333"; }}
+                    onMouseLeave={e=>{ e.currentTarget.style.color="#555"; e.currentTarget.style.borderColor="#1e1e22"; }}>
+                    {label}
+                  </button>
                 ))}
               </div>
-            )}
 
-            {/* Review section */}
-            {reviewYears.length > 0 && (
-              <div style={{ marginBottom:52 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
-                  <span style={{ fontWeight:800, fontSize:20, color:"#f0ede8" }}>Post-Event Reviews</span>
-                  <ModeBadge tracker={false}/>
-                </div>
-                {reviewYears.map(yr => (
-                  <div key={yr} style={{ marginBottom:20 }}>
-                    <div style={{ fontWeight:700, fontSize:11, color:"#444", letterSpacing:"0.12em", marginBottom:10 }}>{yr}</div>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(250px,1fr))", gap:10 }}>
-                      {FESTIVALS.map(f => {
-                        const unlocked = !!unlockedFestivals[f.id];
-                        return (
-                          <button key={f.id} className="fest-card" onClick={()=>selectFestival(f.id)}
-                            style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:14, padding:"20px 24px", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", position:"relative" }}>
-                            {!unlocked && <span style={{ position:"absolute", top:10, right:14, fontSize:12, opacity:0.3 }}>🔒</span>}
-                            <FestivalLogo festival={f} size={28}/>
-                            <span style={{ color:"#2a2a2e", fontSize:14, fontWeight:600 }}>→</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Manage */}
-            <div style={{ borderTop:"1px solid #1a1a1e", paddingTop:28 }}>
-              <div style={{ fontWeight:700, fontSize:11, color:"#3a3a3e", letterSpacing:"0.12em", marginBottom:14 }}>MANAGE</div>
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {[["Years","manage-years"],["Departments","manage-depts"]].map(([label,s]) => (
-                  <button key={s} onClick={()=>setScreen(s)} style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#555", fontSize:12, fontWeight:600, padding:"8px 16px", cursor:"pointer", letterSpacing:"0.04em" }}>{label}</button>
-                ))}
-              </div>
             </div>
           </div>
         </div>
