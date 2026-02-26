@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
+import { GOTTWOOD_LOGO } from "./logos.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -24,32 +25,12 @@ const CATEGORIES = [
 
 const DEFAULT_AREAS = {
   gottwood: [
-    { id: "main-gate", name: "Main Gate", emoji: "🚪" },
-    { id: "crew-campsite", name: "Crew Campsite", emoji: "🏕️" },
-    { id: "general-campsite", name: "General Campsite", emoji: "⛺" },
-    { id: "boutique-campsite", name: "Boutique Campsite", emoji: "✨" },
-    { id: "campsite-traders", name: "Campsite Traders", emoji: "🛍️" },
-    { id: "wellbeing", name: "Wellbeing", emoji: "🧘" },
-    { id: "medical-welfare", name: "Medical & Welfare", emoji: "🦺" },
-    { id: "woods-stage", name: "Woods Stage", emoji: "🌲" },
-    { id: "top-woods", name: "Top Woods", emoji: "🌳" },
-    { id: "woods-traders", name: "Woods Traders", emoji: "🛍️" },
-    { id: "treehouse-stage", name: "Treehouse Stage", emoji: "🏡" },
-    { id: "the-barn", name: "The Barn", emoji: "🎪" },
-    { id: "boxford", name: "Boxford", emoji: "🎵" },
-    { id: "captain-cabeza", name: "Captain Cabeza", emoji: "💀" },
-    { id: "walled-garden", name: "Walled Garden", emoji: "🌿" },
-    { id: "boneyard", name: "Boneyard", emoji: "🦴" },
-    { id: "the-lawn", name: "The Lawn", emoji: "🟢" },
-    { id: "trigon", name: "Trigon", emoji: "🔺" },
-    { id: "rickies-disco", name: "Rickies Disco", emoji: "🪩" },
-    { id: "the-lighthouse", name: "The Lighthouse", emoji: "🔦" },
-    { id: "lakeside-traders", name: "Lakeside Traders", emoji: "🛍️" },
-    { id: "cocktail-bar", name: "Cocktail Bar (old curve)", emoji: "🍸" },
-    { id: "the-curve", name: "The Curve", emoji: "🌊" },
-    { id: "lake", name: "Lake", emoji: "💧" },
-    { id: "the-nest", name: "The Nest", emoji: "🪺" },
-    { id: "site-general", name: "Site General", emoji: "📍" },
+    { id: "main-stage", name: "Main Stage", emoji: "🎪" },
+    { id: "woodland-stage", name: "Woodland Stage", emoji: "🌲" },
+    { id: "arena", name: "Arena", emoji: "⛺" },
+    { id: "bar-social", name: "Bar / Social", emoji: "🍺" },
+    { id: "entrance", name: "Entrance / Gate", emoji: "🚪" },
+    { id: "camping", name: "Camping Zone", emoji: "🏕️" },
   ],
   peep: [
     { id: "main-stage", name: "Main Stage", emoji: "🎪" },
@@ -65,7 +46,7 @@ const DEFAULT_AREAS = {
   ],
 };
 
-const CURRENT_YEAR = "2025";
+const CURRENT_YEAR = new Date().getFullYear().toString();
 const YEARS = ["2022", "2023", "2024", "2025", "2026"];
 
 const RATING_OPTIONS = [
@@ -466,10 +447,8 @@ export default function App() {
                 transition: "all 0.15s",
               }}
             >
-{f.id === "gottwood" 
-  ? <img src="/Gottwood_Logo_White_TYPE.png" style={{height: 18, opacity: activeFestival === "gottwood" ? 1 : 0.4}} />
-  : f.name
-}            </button>
+              {f.id === "gottwood" ? <img src={GOTTWOOD_LOGO} style={{ height: 16, opacity: activeFestival === "gottwood" ? 1 : 0.35, display: "block" }} alt="Gottwood" /> : f.name}
+            </button>
           ))}
         </div>
 
