@@ -153,27 +153,51 @@ async function getAISuggestion({ areaName, catName, workedWell, needsImprovement
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html,body,#root{height:100%}
-  body{background:#0a0a0a;color:#f0ede8;font-family:'Geist',sans-serif;-webkit-font-smoothing:antialiased}
+  html{height:100%;overscroll-behavior:none}
+  body{
+    height:100%;background:#0a0a0a;color:#f0ede8;
+    font-family:'Geist',sans-serif;-webkit-font-smoothing:antialiased;
+    -webkit-text-size-adjust:100%;overscroll-behavior:none;
+  }
+  #root{
+    min-height:100%;
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+    padding-left:env(safe-area-inset-left);
+    padding-right:env(safe-area-inset-right);
+  }
   ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
-  button,select{font-family:inherit}textarea,input{font-family:inherit}
+  button,select{font-family:inherit;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  textarea,input{font-family:inherit;-webkit-tap-highlight-color:transparent}
+  /* font-size >= 16px prevents iOS auto-zoom on focus */
+  input,textarea,select{font-size:16px!important}
+  /* minimum 44px tap targets throughout */
+  button{min-height:44px}
   .screen{animation:fadeUp 0.22s cubic-bezier(0.16,1,0.3,1) both}
   @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-  .row-btn{transition:background 0.12s,border-color 0.12s}
+  .row-btn{transition:background 0.12s,border-color 0.12s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
   .row-btn:hover{background:#1a1a1e!important;border-color:#2e2e36!important}
-  .del-btn{transition:all 0.12s}
+  .row-btn:active{background:#1a1a1e!important;border-color:#2e2e36!important}
+  .del-btn{transition:all 0.12s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
   .del-btn:hover{border-color:#ef444466!important;color:#ef4444!important;background:#1a1010!important}
+  .del-btn:active{border-color:#ef444466!important;color:#ef4444!important;background:#1a1010!important}
   .add-row:hover{border-color:#444!important;color:#888!important}
-  .rating-btn{transition:all 0.18s cubic-bezier(0.34,1.56,0.64,1)}
+  .add-row:active{border-color:#444!important;color:#888!important}
+  .rating-btn{transition:transform 0.18s cubic-bezier(0.34,1.56,0.64,1);-webkit-tap-highlight-color:transparent;touch-action:manipulation;min-height:44px}
   .rating-btn:hover{transform:scale(1.06)}
+  .rating-btn:active{transform:scale(0.96)!important}
+  .back-link{-webkit-tap-highlight-color:transparent;touch-action:manipulation;min-height:44px;min-width:44px}
   .back-link:hover{color:#f0ede8!important}
+  .back-link:active{color:#f0ede8!important}
   .save-pulse{animation:sp 0.4s ease}
   @keyframes sp{0%,100%{opacity:1}50%{opacity:0.3}}
-  .task-row{transition:background 0.1s}
+  .task-row{transition:background 0.1s;-webkit-tap-highlight-color:transparent}
   .task-row:hover{background:#141416!important}
-  .fest-card{transition:background 0.15s,border-color 0.15s,transform 0.15s}
+  .task-row:active{background:#141416!important}
+  .fest-card{transition:background 0.12s,border-color 0.12s,transform 0.12s;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
   .fest-card:hover{background:#1a1a1e!important;border-color:#333!important;transform:translateY(-2px)}
-  textarea{resize:vertical;min-height:64px}
+  .fest-card:active{background:#1a1a1e!important;border-color:#333!important;transform:scale(0.98)!important}
+  textarea{resize:vertical;min-height:88px;-webkit-overflow-scrolling:touch}
   textarea:focus,input:focus,select:focus{outline:none;border-color:#444!important}
   .ai-pulse{animation:aiIn 0.3s ease}
   @keyframes aiIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
@@ -188,7 +212,7 @@ function FestivalLogo({ festival, size = 42, opacity = 1 }) {
 }
 function PageHeader({ children }) {
   return (
-    <div style={{ position:"sticky", top:0, zIndex:10, background:"#0a0a0aee", backdropFilter:"blur(12px)", borderBottom:"1px solid #1a1a1e", padding:"0 20px" }}>
+    <div style={{ position:"sticky", top:0, zIndex:10, background:"#0a0a0aee", backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)", borderBottom:"1px solid #1a1a1e", padding:"0 20px" }}>
       <div style={{ maxWidth:700, margin:"0 auto", height:56, display:"flex", alignItems:"center", gap:10 }}>{children}</div>
     </div>
   );
@@ -539,6 +563,48 @@ async function exportTrackerPDF({ festival, year, depts, allAreas, getAreaTasks 
   doc.save(`${slugify(festival.name)}-${year}-tracker.pdf`);
 }
 
+// ─── Area description ─────────────────────────────────────────────────────────
+
+function AreaDescription({ value, onChange, readOnly }) {
+  const [editing, setEditing] = useState(false);
+  const taRef = useRef(null);
+
+  useEffect(() => {
+    if (editing && taRef.current) {
+      taRef.current.focus();
+      taRef.current.selectionStart = taRef.current.value.length;
+    }
+  }, [editing]);
+
+  if (readOnly) {
+    if (!value) return null;
+    return <p style={{ fontSize:14, color:"#666", lineHeight:1.6, marginBottom:12 }}>{value}</p>;
+  }
+
+  if (editing) {
+    return (
+      <textarea
+        ref={taRef}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onBlur={() => setEditing(false)}
+        placeholder="Add a description for this area…"
+        rows={2}
+        style={{ width:"100%", background:"transparent", border:"none", borderBottom:"1px solid #2a2a2e", borderRadius:0, color:"#888", fontSize:14, padding:"4px 0 8px", lineHeight:1.6, resize:"none", marginBottom:12, outline:"none", minHeight:"auto" }}
+      />
+    );
+  }
+
+  return (
+    <div onClick={() => setEditing(true)} style={{ marginBottom:12, cursor:"text", minHeight:24 }}>
+      {value
+        ? <p style={{ fontSize:14, color:"#666", lineHeight:1.6 }}>{value}</p>
+        : <p style={{ fontSize:13, color:"#2a2a2e", fontStyle:"italic" }}>Add description…</p>
+      }
+    </div>
+  );
+}
+
 // ─── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -567,6 +633,7 @@ export default function App() {
 
   const [areas, setAreas]             = useState({});
   const [areaCategories, setAreaCategories] = useState({});
+  const [areaDescriptions, setAreaDescriptions] = useState({}); // key: `${fest}__${yr}__${dept}__${areaId}`
   const [reviewData, setReviewData]   = useState({});
   const [saveStatuses, setSaveStatuses] = useState({});
   const [trackerData, setTrackerData] = useState({});
@@ -640,6 +707,12 @@ export default function App() {
           dd.filter(r=>r.category_id==="__tasks__").forEach(row=>{
             try{ const tasks=JSON.parse(row.notes??"[]"); const aId=row.area_id.replace(`${activeDept}__`,""); const key=`${activeFestival}__${activeYear}__${activeDept}__${aId}`; setTrackerData(p=>p[key]?p:{...p,[key]:tasks}); }catch(e){}
           });
+          // Descriptions
+          deptData.filter(r=>r.category_id==="__desc__").forEach(row=>{
+            const aId=row.area_id.replace(`${activeDept}__`,"");
+            const key=`${activeFestival}__${activeYear}__${activeDept}__${aId}`;
+            setAreaDescriptions(p=>p[key]?p:{...p,[key]:row.notes??""});
+          });
           const map={};
           dd.filter(r=>r.category_id!=="__tasks__").forEach(row=>{
             const aId=row.area_id.replace(`${activeDept}__`,"");
@@ -690,6 +763,23 @@ export default function App() {
     setTrackerData(p=>({...p,[key]:updated}));
     const aId=slugify(aName);
     supabase.from("reviews").upsert({festival:activeFestival,year:nextTrackerYear,area_id:`${activeDept}__${aId}`,area_name:aName,area_emoji:activeDept,category_id:"__tasks__",rating:null,worked_well:userName,needs_improvement:"",notes:JSON.stringify(updated),updated_at:new Date().toISOString()},{onConflict:"festival,year,area_id,category_id"});
+  }
+
+  // Area description helpers
+  function descKey(aName){ return `${activeFestival}__${activeYear}__${activeDept}__${slugify(aName)}`; }
+  function getDesc(aName){ return areaDescriptions[descKey(aName)] ?? ""; }
+  const saveDescDebounced = useDebounce(async(aName, text) => {
+    const aId=slugify(aName);
+    await supabase.from("reviews").upsert({
+      festival:activeFestival, year:activeYear,
+      area_id:`${activeDept}__${aId}`, area_name:aName, area_emoji:activeDept,
+      category_id:"__desc__", rating:null, worked_well:"", needs_improvement:"", notes:text,
+      updated_at:new Date().toISOString(),
+    },{onConflict:"festival,year,area_id,category_id"});
+  }, 1000);
+  function setDesc(aName, text){
+    setAreaDescriptions(p=>({...p,[descKey(aName)]:text}));
+    saveDescDebounced(aName, text);
   }
 
   // Review helpers
@@ -975,7 +1065,9 @@ export default function App() {
       </PageHeader>
       <div style={{maxWidth:700,margin:"0 auto",padding:"28px 20px 80px"}}>
         <div style={{marginBottom:28}}>
-          <div style={{fontWeight:800,fontSize:30,color:"#f0ede8",lineHeight:1.1,marginBottom:10}}>{selectedArea}</div>
+          <div style={{fontWeight:800,fontSize:30,color:"#f0ede8",lineHeight:1.1,marginBottom:8}}>{selectedArea}</div>
+          {/* Description field */}
+          <AreaDescription value={getDesc(selectedArea)} onChange={v=>setDesc(selectedArea,v)} readOnly={isSupplier} />
           {tracker?(()=>{const{total,done,blocked,inProgress}=areaTaskStats(selectedArea);const color=areaRAGColor(selectedArea);return(<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><div style={{flex:1,height:3,background:"#1e1e22",borderRadius:2,overflow:"hidden",minWidth:80}}><div style={{height:"100%",width:`${total>0?(done/total)*100:0}%`,background:color??"#333",transition:"width 0.4s",borderRadius:2}}/></div><span style={{fontSize:11,fontWeight:700,color:"#555",letterSpacing:"0.06em",whiteSpace:"nowrap"}}>{done}/{total} DONE</span>{inProgress>0&&<Pill label={`${inProgress} in progress`} color="#eab308"/>}{blocked>0&&<Pill label={`${blocked} blocked`} color="#ef4444"/>}</div>);})():(()=>{const{rated,total}=areaReviewScore(selectedArea);const color=areaReviewColor(selectedArea);return(<div style={{display:"flex",alignItems:"center",gap:10}}><div style={{flex:1,height:3,background:"#1e1e22",borderRadius:2,overflow:"hidden"}}><div style={{height:"100%",width:`${total>0?(rated/total)*100:0}%`,background:color??"#333",transition:"width 0.4s",borderRadius:2}}/></div><span style={{fontSize:11,fontWeight:700,color:"#555",letterSpacing:"0.06em",whiteSpace:"nowrap"}}>{rated}/{total} VOTED</span></div>);})()}
         </div>
 
