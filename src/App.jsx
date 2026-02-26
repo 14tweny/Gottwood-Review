@@ -1235,7 +1235,14 @@ export default function App() {
               </div>
             )}
             {cats.length===0?(
-              <div style={{textAlign:"center",padding:"60px 0",color:"#444",fontSize:12,letterSpacing:"0.1em"}}>NO SECTIONS — TAP "EDIT SECTIONS" TO ADD SOME</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{textAlign:"center",padding:"40px 0 20px",color:"#444",fontSize:12,letterSpacing:"0.1em"}}>NO SECTIONS YET</div>
+                {!isSupplier&&<AddRow placeholder="Add a section..." onAdd={n=>{
+                  const pool=getAvailableCats(selectedArea);
+                  if(!pool.includes(n)) saveAvailableCats(selectedArea,[...pool,n]);
+                  setCats(selectedArea,[...cats,n]);
+                }}/>}
+              </div>
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {cats.map(cat=>{
@@ -1247,6 +1254,11 @@ export default function App() {
                     onAISuggestion={suggestion=>addAISuggestion(selectedArea,suggestion)}
                   />);
                 })}
+                {!isSupplier&&<AddRow placeholder="Add a section..." onAdd={n=>{
+                  const pool=getAvailableCats(selectedArea);
+                  if(!pool.includes(n)) saveAvailableCats(selectedArea,[...pool,n]);
+                  setCats(selectedArea,[...cats,n]);
+                }}/>}
               </div>
             )}
             {!isSupplier&&(
