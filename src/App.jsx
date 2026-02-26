@@ -386,27 +386,36 @@ export default function App() {
       <>
         <style>{css}</style>
         <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#0c0c0e" }}>
-          <div style={{ width: "100%", maxWidth: 480 }}>
-            <div style={{ marginBottom: 48, textAlign: "center" }}>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.18em", color: "#444", marginBottom: 12 }}>PRODUCTION REVIEW</div>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 32, color: "#f0ede8", lineHeight: 1.1 }}>Select a Festival</div>
+          <div style={{ width: "100%", maxWidth: 560 }}>
+            <div style={{ textAlign: "center", marginBottom: 52 }}>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#333", marginBottom: 6 }}>PRODUCTION REVIEW SYSTEM</div>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A FESTIVAL</div>
             </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {FESTIVALS.map(f => (
                 <button
                   key={f.id}
                   className="fest-btn"
                   onClick={() => { setActiveFestival(f.id); setScreen("areas"); }}
                   style={{
-                    width: "100%", padding: "22px 24px",
-                    background: "#111113", border: "1px solid #222",
-                    borderRadius: 14, cursor: "pointer", color: "#f0ede8",
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    width: "100%", padding: "36px 28px",
+                    background: "#111113", border: "1px solid #1e1e22",
+                    borderRadius: 16, cursor: "pointer", color: "#f0ede8",
+                    display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center",
+                    position: "relative",
                   }}
                 >
-                  <FestivalLogo festival={f} active={true} />
-                  <span style={{ color: "#333", fontSize: 18 }}>→</span>
+                  {f.id === "gottwood" && (
+                    <img src={GOTTWOOD_LOGO} style={{ height: 52, display: "block", objectFit: "contain" }} alt="Gottwood" />
+                  )}
+                  {f.id === "peep" && (
+                    <img src={PEEP_LOGO} style={{ height: 52, display: "block", objectFit: "contain" }} alt="Peep Festival" />
+                  )}
+                  {f.id === "soysambu" && (
+                    <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 28, letterSpacing: "0.12em", color: "#f0ede8" }}>SOYSAMBU</span>
+                  )}
+                  <span style={{ position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)", color: "#2a2a2e", fontSize: 18 }}>→</span>
                 </button>
               ))}
             </div>
