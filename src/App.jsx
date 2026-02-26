@@ -686,6 +686,7 @@ export default function App() {
 
   const [areas, setAreas]             = useState({});
   const [areaCategories, setAreaCategories] = useState({});
+  const [areaAvailableCats, setAreaAvailableCats] = useState({}); // defaults + custom additions per area
   const [areaDescriptions, setAreaDescriptions] = useState({}); // key: `${fest}__${yr}__${dept}__${areaId}`
   const [reviewData, setReviewData]   = useState({});
   const [saveStatuses, setSaveStatuses] = useState({});
@@ -779,8 +780,17 @@ export default function App() {
               if(Array.isArray(cats)) setAreaCategories(p=>({...p,[key]:cats}));
             }catch(e){}
           });
+          // Available (pool) category lists per area — defaults + custom
+          dd.filter(r=>r.category_id==="__available_cats__").forEach(row=>{
+            try{
+              const aId=row.area_id.replace(`${activeDept}__`,"");
+              const key=`${activeFestival}__${activeDept}__${aId}`;
+              const cats=JSON.parse(row.notes??"null");
+              if(Array.isArray(cats)) setAreaAvailableCats(p=>({...p,[key]:cats}));
+            }catch(e){}
+          });
           const map={};
-          dd.filter(r=>r.category_id!=="__tasks__"&&r.category_id!=="__areas__"&&r.category_id!=="__cats__"&&r.category_id!=="__desc__").forEach(row=>{
+          dd.filter(r=>r.category_id!=="__tasks__"&&r.category_id!=="__areas__"&&r.category_id!=="__cats__"&&r.category_id!=="__desc__"&&r.category_id!=="__available_cats__").forEach(row=>{
             const aId=row.area_id.replace(`${activeDept}__`,"");
             let votes={};
             try{ if(row.worked_well?.startsWith("__votes__")) votes=JSON.parse(row.worked_well.slice(9)); }catch(e){}
@@ -862,6 +872,22 @@ export default function App() {
 
   // Review helpers
   function getCats(aName) { return areaCategories[`${activeFestival}__${activeDept}__${slugify(aName)}`]??(DEPT_REVIEW_CATS[activeDept]??[]); }
+  function getAvailableCats(aName) {
+    const saved = areaAvailableCats[`${activeFestival}__${activeDept}__${slugify(aName)}`];
+    if (saved) return saved;
+    return DEPT_REVIEW_CATS[activeDept] ?? [];
+  }
+  function saveAvailableCats(aName, pool) {
+    setAreaAvailableCats(p=>({...p,[`${activeFestival}__${activeDept}__${slugify(aName)}`]:pool}));
+    if(!activeFestival||!activeYear||!activeDept) return;
+    const aId=slugify(aName);
+    supabase.from("reviews").upsert({
+      festival:activeFestival, year:activeYear,
+      area_id:`${activeDept}__${aId}`, area_name:aName, area_emoji:activeDept,
+      category_id:"__available_cats__", rating:null, worked_well:"", needs_improvement:"",
+      notes:JSON.stringify(pool), updated_at:new Date().toISOString(),
+    },{onConflict:"festival,year,area_id,category_id"});
+  }
   function setCats(aName, newCats) {
     const stateKey=`${activeFestival}__${activeDept}__${slugify(aName)}`;
     setAreaCategories(p=>({...p,[stateKey]:newCats}));
@@ -1200,11 +1226,11 @@ export default function App() {
               <div style={{background:"#111113",border:"1px solid #1e1e22",borderRadius:14,padding:20,marginBottom:20}}>
                 <div style={{fontWeight:800,fontSize:12,color:"#555",letterSpacing:"0.1em",marginBottom:14}}>SECTIONS FOR THIS AREA</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
-                  {(DEPT_REVIEW_CATS[activeDept]??[]).map(cat=>{const active=cats.includes(cat);return<button key={cat} onClick={()=>active?setCats(selectedArea,cats.filter(c=>c!==cat)):setCats(selectedArea,[...cats,cat])} style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${active?"#f0ede8":"#252528"}`,background:active?"#f0ede811":"transparent",color:active?"#f0ede8":"#555",fontWeight:600,fontSize:12,cursor:"pointer"}}>{active?"✓ ":""}{cat}</button>;})}
+                  {getAvailableCats(selectedArea).map(cat=>{const active=cats.includes(cat);return<button key={cat} onClick={()=>active?setCats(selectedArea,cats.filter(c=>c!==cat)):setCats(selectedArea,[...cats,cat])} style={{padding:"7px 14px",borderRadius:20,border:`1px solid ${active?"#f0ede8":"#252528"}`,background:active?"#f0ede811":"transparent",color:active?"#f0ede8":"#555",fontWeight:600,fontSize:12,cursor:"pointer"}}>{active?"✓ ":""}{cat}</button>;})}
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newCatName.trim()){setCats(selectedArea,[...cats,newCatName.trim()]);setNewCatName("");}}} placeholder="Add custom section..." style={{flex:1,background:"#0a0a0a",border:"1px solid #252528",borderRadius:8,color:"#f0ede8",padding:"8px 12px",fontSize:13}}/>
-                  <button onClick={()=>{if(newCatName.trim()){setCats(selectedArea,[...cats,newCatName.trim()]);setNewCatName("");}}} style={{background:"#f0ede8",color:"#0a0a0a",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:12,cursor:"pointer"}}>ADD</button>
+                  <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newCatName.trim()){const n=newCatName.trim();const pool=getAvailableCats(selectedArea);if(!pool.includes(n)){saveAvailableCats(selectedArea,[...pool,n]);}setCats(selectedArea,[...cats,n]);setNewCatName("");}}} placeholder="Add custom section..." style={{flex:1,background:"#0a0a0a",border:"1px solid #252528",borderRadius:8,color:"#f0ede8",padding:"8px 12px",fontSize:13}}/>
+                  <button onClick={()=>{if(newCatName.trim()){const n=newCatName.trim();const pool=getAvailableCats(selectedArea);if(!pool.includes(n)){saveAvailableCats(selectedArea,[...pool,n]);}setCats(selectedArea,[...cats,n]);setNewCatName("");}}} style={{background:"#f0ede8",color:"#0a0a0a",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:12,cursor:"pointer"}}>ADD</button>
                 </div>
               </div>
             )}
