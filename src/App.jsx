@@ -15,17 +15,56 @@ const ALL_CATEGORIES = [
   "Crowd Flow", "Power & Electrics", "Staging", "Comms & Signage", "Safety",
 ];
 
-const DEFAULT_AREAS = {
-  gottwood: [
-    "Main Gate", "Crew Campsite", "General Campsite", "Boutique Campsite",
-    "Campsite Traders", "Wellbeing", "Medical & Welfare", "Woods Stage",
-    "Top Woods", "Woods Traders", "Treehouse Stage", "The Barn", "Boxford",
-    "Captain Cabeza", "Walled Garden", "Boneyard", "The Lawn", "Trigon",
-    "Rickies Disco", "The Lighthouse", "Lakeside Traders",
-    "Cocktail Bar (old curve)", "The Curve", "Lake", "The Nest", "Site General",
-  ],
-  peep: ["Main Stage", "Stage 2", "Bar / Social", "Entrance / Gate", "Camping Zone"],
-  soysambu: ["Main Stage", "Bar / Social", "Entrance / Gate"],
+const DEPARTMENTS = [
+  { id: "production",          name: "Production" },
+  { id: "council-licensing",   name: "Council & Licensing" },
+  { id: "artists",             name: "Artists" },
+  { id: "logistics",           name: "Logistics" },
+];
+
+const DEFAULT_DEPT_AREAS = {
+  gottwood: {
+    "production": [
+      "Woods Stage", "Treehouse Stage", "The Barn", "Boxford", "Captain Cabeza",
+      "Walled Garden", "Boneyard", "The Lawn", "Trigon", "Rickies Disco",
+      "The Lighthouse", "The Curve", "The Nest", "Cocktail Bar (old curve)",
+      "Power & Electrics", "Site General",
+    ],
+    "council-licensing": [
+      "Premises Licence", "SAG Submissions", "Noise Management", "Medical Provision",
+      "Welfare & Safeguarding", "Fire Safety", "Traffic Management", "Environmental Health",
+    ],
+    "artists": [
+      "Green Room", "Artist Hospitality", "Backline & Production Riders",
+      "Artist Transport", "Guest List & Wristbands", "Dressing Rooms",
+    ],
+    "logistics": [
+      "Main Gate", "Crew Campsite", "General Campsite", "Boutique Campsite",
+      "Campsite Traders", "Wellbeing", "Medical & Welfare", "Woods Traders",
+      "Lakeside Traders", "Lake", "Crew Catering", "Waste & Recycling",
+    ],
+  },
+  peep: {
+    "production": [
+      "Main Stage", "Stage 2", "Bar / Social", "Power & Electrics", "Site General",
+    ],
+    "council-licensing": [
+      "Premises Licence", "SAG Submissions", "Noise Management",
+      "Medical Provision", "Fire Safety",
+    ],
+    "artists": [
+      "Green Room", "Artist Hospitality", "Backline & Riders", "Artist Transport",
+    ],
+    "logistics": [
+      "Entrance / Gate", "Camping Zone", "Traders", "Welfare", "Waste & Recycling",
+    ],
+  },
+  soysambu: {
+    "production": ["Main Stage", "Bar / Social", "Power & Electrics", "Site General"],
+    "council-licensing": ["Permits & Licensing", "Noise Management", "Medical Provision"],
+    "artists": ["Green Room", "Artist Hospitality", "Artist Transport"],
+    "logistics": ["Entrance / Gate", "Camping", "Traders", "Waste & Recycling"],
+  },
 };
 
 const YEARS = ["2022", "2023", "2024", "2025", "2026"];
@@ -448,14 +487,15 @@ async function exportToPDF({ festival, year, areas, reviewData, getCats, getAllR
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  // Navigation: "festivals" | "year" | "areas" | "area-detail"
+  // Navigation: "festivals" | "year" | "departments" | "areas" | "area-detail"
   const [screen, setScreen] = useState("festivals");
   const [activeFestival, setActiveFestival] = useState(null);
   const [activeYear, setActiveYear] = useState(null);
+  const [activeDept, setActiveDept] = useState(null);
   const [selectedArea, setSelectedArea] = useState(null);
 
   // Data
-  const [areas, setAreas] = useState({});
+  const [areas, setAreas] = useState({});  // keyed as "festivalId__deptId"
   const [areaCategories, setAreaCategories] = useState({});
   const [reviewData, setReviewData] = useState({});
   const [saveStatuses, setSaveStatuses] = useState({});
@@ -473,10 +513,13 @@ export default function App() {
     if (!activeFestival) return;
 
     // Set default areas if not loaded yet
-    setAreas(prev => {
-      if (prev[activeFestival]) return prev;
-      return { ...prev, [activeFestival]: DEFAULT_AREAS[activeFestival] ?? [] };
-    });
+    if (activeDept) {
+      const deptKey = `${activeFestival}__${activeDept}`;
+      setAreas(prev => {
+        if (prev[deptKey]) return prev;
+        return { ...prev, [deptKey]: DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept] ?? [] };
+      });
+    }
 
     // Load reviews from Supabase
     async function load() {
@@ -486,46 +529,49 @@ export default function App() {
         .eq("festival", activeFestival).eq("year", activeYear);
 
       if (!error && data) {
+        // Filter to current dept only
+        const deptData = data.filter(row => row.area_emoji === activeDept);
         const map = {};
         const catMap = {};
-        data.forEach(row => {
-          const key = `${row.area_id}__${row.category_id}`;
+        deptData.forEach(row => {
+          const cleanAreaId = row.area_id.replace(`${activeDept}__`, "");
+          const key = `${cleanAreaId}__${row.category_id}`;
           map[key] = {
             rating: row.rating,
             worked_well: row.worked_well,
             needs_improvement: row.needs_improvement,
             notes: row.notes,
           };
-          // Rebuild per-area category lists from saved data
-          if (!catMap[row.area_id]) catMap[row.area_id] = new Set();
-          catMap[row.area_id].add(row.category_id);
+          if (!catMap[cleanAreaId]) catMap[cleanAreaId] = new Set();
+          catMap[cleanAreaId].add(row.category_id);
         });
         setReviewData(map);
 
         // Merge DB areas into local list
-        const dbAreaNames = [...new Map(data.map(r => [r.area_id, r.area_name])).entries()];
+        const deptKey = `${activeFestival}__${activeDept}`;
+        const dbAreaNames = [...new Map(deptData.map(r => [r.area_id.replace(`${activeDept}__`, ""), r.area_name])).entries()];
         setAreas(prev => {
-          const existing = prev[activeFestival] ?? DEFAULT_AREAS[activeFestival] ?? [];
+          const existing = prev[deptKey] ?? DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept] ?? [];
           const existingIds = new Set(existing.map(a => slugify(a)));
           const extras = dbAreaNames.filter(([id]) => !existingIds.has(id)).map(([, name]) => name);
-          return { ...prev, [activeFestival]: [...existing, ...extras] };
+          return { ...prev, [deptKey]: [...existing, ...extras] };
         });
       }
       setLoading(false);
     }
     load();
-  }, [activeFestival, activeYear]);
+  }, [activeFestival, activeYear, activeDept]);
 
   // Get categories for current area
   const getCats = useCallback((areaName) => {
-    const key = `${activeFestival}__${slugify(areaName)}`;
+    const key = `${activeFestival}__${activeDept}__${slugify(areaName)}`;
     return areaCategories[key] ?? ALL_CATEGORIES;
-  }, [activeFestival, areaCategories]);
+  }, [activeFestival, activeDept, areaCategories]);
 
   const setCats = useCallback((areaName, cats) => {
-    const key = `${activeFestival}__${slugify(areaName)}`;
+    const key = `${activeFestival}__${activeDept}__${slugify(areaName)}`;
     setAreaCategories(prev => ({ ...prev, [key]: cats }));
-  }, [activeFestival]);
+  }, [activeFestival, activeDept]);
 
   // Save a category review
   const handleSave = useCallback(async (areaName, catName, patch) => {
@@ -535,7 +581,7 @@ export default function App() {
     setSaveStatuses(s => ({ ...s, [key]: "saving" }));
     const { error } = await supabase.from("reviews").upsert({
       festival: activeFestival, year: activeYear,
-      area_id: areaId, area_name: areaName, area_emoji: "",
+      area_id: `${activeDept}__${areaId}`, area_name: areaName, area_emoji: activeDept,
       category_id: catId, rating: patch.rating,
       worked_well: patch.worked_well ?? "",
       needs_improvement: patch.needs_improvement ?? "",
@@ -550,7 +596,7 @@ export default function App() {
   // Add area
   const addArea = () => {
     if (!newAreaName.trim()) return;
-    setAreas(prev => ({ ...prev, [activeFestival]: [...(prev[activeFestival] ?? []), newAreaName.trim()] }));
+    setAreas(prev => ({ ...prev, [deptKey]: [...(prev[deptKey] ?? []), newAreaName.trim()] }));
     setNewAreaName("");
     setAddingArea(false);
   };
@@ -621,7 +667,8 @@ export default function App() {
   }
 
   const festival = FESTIVALS.find(f => f.id === activeFestival);
-  const festivalAreas = areas[activeFestival] ?? [];
+  const deptKey = `${activeFestival}__${activeDept}`;
+  const festivalAreas = areas[deptKey] ?? [];
 
   // ── SCREEN: Year picker ──
   if (screen === "year") {
@@ -643,7 +690,7 @@ export default function App() {
                 <button
                   key={y}
                   className="fest-btn"
-                  onClick={() => { setActiveYear(y); setScreen("areas"); }}
+                  onClick={() => { setActiveYear(y); setScreen("departments"); }}
                   style={{
                     width: "100%", padding: "20px 28px",
                     background: "#111113", border: "1px solid #1e1e22",
@@ -667,6 +714,52 @@ export default function App() {
     );
   }
 
+  // ── SCREEN: Departments ──
+  if (screen === "departments") {
+    const festival = FESTIVALS.find(f => f.id === activeFestival);
+    return (
+      <>
+        <style>{css}</style>
+        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#0a0a0a" }}>
+          <div style={{ width: "100%", maxWidth: 560 }}>
+            <div style={{ textAlign: "center", marginBottom: 48 }}>
+              <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}>
+                <FestivalLogo festival={festival} active={true} />
+              </div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.18em", color: "#444", marginBottom: 4 }}>{activeYear}</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A DEPARTMENT</div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {DEPARTMENTS.map(dept => (
+                <button
+                  key={dept.id}
+                  className="fest-btn"
+                  onClick={() => { setActiveDept(dept.id); setScreen("areas"); }}
+                  style={{
+                    width: "100%", padding: "22px 28px",
+                    background: "#111113", border: "1px solid #1e1e22",
+                    borderRadius: 14, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                  }}
+                >
+                  <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 18, color: "#f0ede8", letterSpacing: "0.04em" }}>
+                    {dept.name}
+                  </span>
+                  <span style={{ color: "#2a2a2e", fontSize: 18 }}>→</span>
+                </button>
+              ))}
+            </div>
+
+            <button className="back-btn" onClick={() => setScreen("year")} style={{ marginTop: 28, background: "none", border: "none", cursor: "pointer", color: "#444", fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+              ← BACK
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // ── SCREEN: Areas list ──
   if (screen === "areas") {
     return (
@@ -677,7 +770,7 @@ export default function App() {
           {/* Header */}
           <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#0a0a0aee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
             <div style={{ maxWidth: 700, margin: "0 auto", height: 56, display: "flex", alignItems: "center", gap: 14 }}>
-              <button className="back-btn" onClick={() => setScreen("year")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
+              <button className="back-btn" onClick={() => setScreen("departments")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
               <FestivalLogo festival={festival} active={true} />
               <div style={{ flex: 1 }} />
               {/* Year display — click to go back and change */}
@@ -693,7 +786,7 @@ export default function App() {
 
           <div style={{ maxWidth: 700, margin: "0 auto", padding: "28px 20px 60px" }}>
             <div style={{ marginBottom: 28 }}>
-              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 26, color: "#f0ede8", marginBottom: 4 }}>Areas</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 26, color: "#f0ede8", marginBottom: 4 }}>{DEPARTMENTS.find(d => d.id === activeDept)?.name}</div>
               <div style={{ fontSize: 13, color: "#555" }}>{festivalAreas.length} areas · {activeYear}</div>
             </div>
 
@@ -745,7 +838,7 @@ export default function App() {
                       <button
                         onClick={() => {
                           if (window.confirm(`Delete "${areaName}"? This won't remove saved data from the database.`)) {
-                            setAreas(prev => ({ ...prev, [activeFestival]: prev[activeFestival].filter(a => a !== areaName) }));
+                            setAreas(prev => ({ ...prev, [deptKey]: prev[deptKey].filter(a => a !== areaName) }));
                           }
                         }}
                         title="Delete area"
@@ -807,7 +900,9 @@ export default function App() {
             <button className="back-btn" onClick={() => setScreen("areas")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
             <FestivalLogo festival={festival} active={true} />
             <span style={{ color: "#2a2a2e", fontSize: 14 }}>·</span>
-            <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 13, color: "#888", letterSpacing: "0.04em" }}>{activeYear}</span>
+            <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 13, color: "#888", letterSpacing: "0.04em" }}>{DEPARTMENTS.find(d => d.id === activeDept)?.name}</span>
+            <span style={{ color: "#2a2a2e", fontSize: 14 }}>·</span>
+            <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 13, color: "#555", letterSpacing: "0.04em" }}>{activeYear}</span>
             <div style={{ flex: 1 }} />
             <button
               onClick={() => setEditingCats(!editingCats)}
