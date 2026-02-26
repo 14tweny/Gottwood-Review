@@ -57,10 +57,10 @@ function useDebounce(fn, delay) {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const css = `
-  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Instrument+Sans:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body, #root { height: 100%; }
-  body { background: #0a0a0a; color: #f0ede8; font-family: 'Instrument Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #0a0a0a; color: #f0ede8; font-family: 'Geist', sans-serif; -webkit-font-smoothing: antialiased; }
   ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
   button { font-family: inherit; } textarea, input { font-family: inherit; }
 
@@ -101,7 +101,7 @@ function FestivalLogo({ festival, active }) {
   const opacity = active ? 1 : 0.4;
   if (festival.id === "gottwood") return <img src={GOTTWOOD_LOGO} style={{ height: 14, opacity, display: "block" }} alt="Gottwood" />;
   if (festival.id === "peep") return <img src={PEEP_LOGO} style={{ height: 14, opacity, display: "block" }} alt="Peep" />;
-  return <span style={{ opacity, fontSize: 11, fontFamily: "'Syne', sans-serif", fontWeight: 700, letterSpacing: "0.08em" }}>{festival.name.toUpperCase()}</span>;
+  return <span style={{ opacity, fontSize: 11, fontFamily: "'Geist', sans-serif", fontWeight: 700, letterSpacing: "0.08em" }}>{festival.name.toUpperCase()}</span>;
 }
 
 function RatingBar({ value, onChange }) {
@@ -124,7 +124,7 @@ function RatingBar({ value, onChange }) {
               color: active ? r.color : "#555",
               fontSize: 11,
               fontWeight: 600,
-              fontFamily: "'Syne', sans-serif",
+              fontFamily: "'Geist', sans-serif",
               letterSpacing: "0.04em",
               cursor: "pointer",
               display: "flex",
@@ -199,7 +199,7 @@ function CategorySection({ catName, data, onSave, saveKey, saveStatuses }) {
         }} />
 
         <span style={{
-          fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 13,
+          fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 13,
           letterSpacing: "0.06em", flex: 1,
           color: rating || hasContent ? "#e8e4df" : "#555",
         }}>
@@ -207,12 +207,12 @@ function CategorySection({ catName, data, onSave, saveKey, saveStatuses }) {
         </span>
 
         {/* Status indicators */}
-        {status === "saving" && <span style={{ fontSize: 10, color: "#555", fontFamily: "'Syne', sans-serif" }}>SAVING…</span>}
-        {status === "saved" && <span className="save-pulse" style={{ fontSize: 10, color: "#22c55e", fontFamily: "'Syne', sans-serif" }}>SAVED</span>}
+        {status === "saving" && <span style={{ fontSize: 10, color: "#555", fontFamily: "'Geist', sans-serif" }}>SAVING…</span>}
+        {status === "saved" && <span className="save-pulse" style={{ fontSize: 10, color: "#22c55e", fontFamily: "'Geist', sans-serif" }}>SAVED</span>}
 
         {rating && !open && (
           <span style={{
-            fontSize: 10, fontWeight: 700, fontFamily: "'Syne', sans-serif",
+            fontSize: 10, fontWeight: 700, fontFamily: "'Geist', sans-serif",
             color: rating.color, letterSpacing: "0.06em",
           }}>
             {rating.label.toUpperCase()}
@@ -220,11 +220,11 @@ function CategorySection({ catName, data, onSave, saveKey, saveStatuses }) {
         )}
 
         {hasContent && !open && !rating && (
-          <span style={{ fontSize: 10, color: "#444", fontFamily: "'Syne', sans-serif", letterSpacing: "0.06em" }}>NOTES</span>
+          <span style={{ fontSize: 10, color: "#444", fontFamily: "'Geist', sans-serif", letterSpacing: "0.06em" }}>NOTES</span>
         )}
 
         <span style={{
-          color: "#333", fontSize: 12, fontFamily: "'Syne', sans-serif",
+          color: "#333", fontSize: 12, fontFamily: "'Geist', sans-serif",
           transform: open ? "rotate(180deg)" : "rotate(0deg)",
           transition: "transform 0.2s",
           display: "inline-block", marginLeft: 4,
@@ -275,13 +275,13 @@ function CategorySection({ catName, data, onSave, saveKey, saveStatuses }) {
 }
 
 const labelSt = {
-  fontSize: 10, fontWeight: 600, fontFamily: "'Syne', sans-serif",
+  fontSize: 10, fontWeight: 600, fontFamily: "'Geist', sans-serif",
   color: "#555", letterSpacing: "0.1em", textTransform: "uppercase",
 };
 
 const taSt = (bg) => ({
   width: "100%", background: bg, border: "1px solid #222",
-  borderRadius: 8, color: "#c8c4bf", fontFamily: "'Instrument Sans', sans-serif",
+  borderRadius: 8, color: "#c8c4bf", fontFamily: "'Geist', sans-serif",
   fontSize: 13, padding: "10px 12px", lineHeight: 1.6, boxSizing: "border-box",
 });
 
@@ -423,8 +423,8 @@ export default function App() {
               <div style={{ marginBottom: 24, display: "flex", justifyContent: "center", alignItems: "center" }}>
                 <img src={FOURTEEN_TWENTY_LOGO} style={{ height: 96, objectFit: "contain", display: "block" }} alt="14twenty" />
               </div>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#444", marginBottom: 6 }}>PRODUCTION REVIEW SYSTEM</div>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A FESTIVAL</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#444", marginBottom: 6 }}>PRODUCTION REVIEW SYSTEM</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A FESTIVAL</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {FESTIVALS.map(f => (
@@ -448,7 +448,7 @@ export default function App() {
                     <img src={PEEP_LOGO} style={{ height: 52, display: "block", objectFit: "contain" }} alt="Peep Festival" />
                   )}
                   {f.id === "soysambu" && (
-                    <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 28, letterSpacing: "0.12em", color: "#f0ede8" }}>SOYSAMBU</span>
+                    <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 28, letterSpacing: "0.12em", color: "#f0ede8" }}>SOYSAMBU</span>
                   )}
                   <span style={{ position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)", color: "#2a2a2e", fontSize: 18 }}>→</span>
                 </button>
@@ -471,11 +471,11 @@ export default function App() {
         <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#0a0a0a" }}>
           <div style={{ width: "100%", maxWidth: 560 }}>
             <div style={{ textAlign: "center", marginBottom: 52 }}>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#333", marginBottom: 16 }}>PRODUCTION REVIEW SYSTEM</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#333", marginBottom: 16 }}>PRODUCTION REVIEW SYSTEM</div>
               <div style={{ marginBottom: 20, display: "flex", justifyContent: "center" }}>
                 <FestivalLogo festival={festival} active={true} />
               </div>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A YEAR</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A YEAR</div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -492,13 +492,13 @@ export default function App() {
                     position: "relative",
                   }}
                 >
-                  <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 24, color: "#f0ede8", letterSpacing: "0.06em" }}>{y}</span>
+                  <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 24, color: "#f0ede8", letterSpacing: "0.06em" }}>{y}</span>
                   <span style={{ color: "#2a2a2e", fontSize: 18 }}>→</span>
                 </button>
               ))}
             </div>
 
-            <button className="back-btn" onClick={() => setScreen("festivals")} style={{ marginTop: 28, background: "none", border: "none", cursor: "pointer", color: "#444", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+            <button className="back-btn" onClick={() => setScreen("festivals")} style={{ marginTop: 28, background: "none", border: "none", cursor: "pointer", color: "#444", fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
               ← BACK
             </button>
           </div>
@@ -523,7 +523,7 @@ export default function App() {
               {/* Year display — click to go back and change */}
               <button onClick={() => setScreen("year")} style={{
                 background: "#1e1e22", border: "1px solid #252528", borderRadius: 8,
-                color: "#ccc", fontFamily: "'Syne', sans-serif", fontWeight: 700,
+                color: "#ccc", fontFamily: "'Geist', sans-serif", fontWeight: 700,
                 fontSize: 12, padding: "6px 12px", cursor: "pointer", letterSpacing: "0.06em",
               }}>
                 {activeYear} ▾
@@ -533,12 +533,12 @@ export default function App() {
 
           <div style={{ maxWidth: 700, margin: "0 auto", padding: "28px 20px 60px" }}>
             <div style={{ marginBottom: 28 }}>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 26, color: "#f0ede8", marginBottom: 4 }}>Areas</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 26, color: "#f0ede8", marginBottom: 4 }}>Areas</div>
               <div style={{ fontSize: 13, color: "#555" }}>{festivalAreas.length} areas · {activeYear}</div>
             </div>
 
             {loading ? (
-              <div style={{ textAlign: "center", padding: 60, color: "#444", fontFamily: "'Syne', sans-serif", fontSize: 12, letterSpacing: "0.1em" }}>LOADING…</div>
+              <div style={{ textAlign: "center", padding: 60, color: "#444", fontFamily: "'Geist', sans-serif", fontSize: 12, letterSpacing: "0.1em" }}>LOADING…</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {festivalAreas.map(areaName => {
@@ -564,7 +564,7 @@ export default function App() {
                         }} />
 
                         {/* Name */}
-                        <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: rated > 0 ? "#e8e4df" : "#666", flex: 1 }}>
+                        <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 14, color: rated > 0 ? "#e8e4df" : "#666", flex: 1 }}>
                           {areaName}
                         </span>
 
@@ -574,7 +574,7 @@ export default function App() {
                         </div>
 
                         {/* Label */}
-                        <span style={{ fontSize: 10, fontFamily: "'Syne', sans-serif", fontWeight: 600, color: rated > 0 ? (color ?? "#888") : "#2a2a2e", letterSpacing: "0.06em", minWidth: 60, textAlign: "right" }}>
+                        <span style={{ fontSize: 10, fontFamily: "'Geist', sans-serif", fontWeight: 600, color: rated > 0 ? (color ?? "#888") : "#2a2a2e", letterSpacing: "0.06em", minWidth: 60, textAlign: "right" }}>
                           {rated > 0 ? `${rated}/${total}` : "—"}
                         </span>
 
@@ -612,14 +612,14 @@ export default function App() {
                       placeholder="Area name..."
                       style={{ flex: 1, background: "#0a0a0a", border: "1px solid #333", borderRadius: 7, color: "#f0ede8", padding: "8px 10px", fontSize: 13 }}
                     />
-                    <button onClick={addArea} style={{ background: "#f0ede8", color: "#0a0a0a", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: "'Syne', sans-serif", cursor: "pointer" }}>ADD</button>
+                    <button onClick={addArea} style={{ background: "#f0ede8", color: "#0a0a0a", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: "'Geist', sans-serif", cursor: "pointer" }}>ADD</button>
                     <button onClick={() => setAddingArea(false)} style={{ background: "transparent", color: "#555", border: "1px solid #252528", borderRadius: 7, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>✕</button>
                   </div>
                 ) : (
                   <button
                     className="area-card"
                     onClick={() => setAddingArea(true)}
-                    style={{ background: "transparent", border: "1px dashed #252528", borderRadius: 12, cursor: "pointer", padding: "14px 18px", color: "#444", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+                    style={{ background: "transparent", border: "1px dashed #252528", borderRadius: 12, cursor: "pointer", padding: "14px 18px", color: "#444", fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
                   >
                     + ADD AREA
                   </button>
@@ -647,7 +647,7 @@ export default function App() {
             <button className="back-btn" onClick={() => setScreen("areas")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
             <FestivalLogo festival={festival} active={true} />
             <span style={{ color: "#2a2a2e", fontSize: 14 }}>·</span>
-            <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 13, color: "#888", letterSpacing: "0.04em" }}>{activeYear}</span>
+            <span style={{ fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 13, color: "#888", letterSpacing: "0.04em" }}>{activeYear}</span>
             <div style={{ flex: 1 }} />
             <button
               onClick={() => setEditingCats(!editingCats)}
@@ -655,7 +655,7 @@ export default function App() {
                 background: editingCats ? "#f0ede822" : "transparent",
                 border: `1px solid ${editingCats ? "#555" : "#252528"}`,
                 borderRadius: 8, color: editingCats ? "#f0ede8" : "#555",
-                fontFamily: "'Syne', sans-serif", fontWeight: 700,
+                fontFamily: "'Geist', sans-serif", fontWeight: 700,
                 fontSize: 10, letterSpacing: "0.08em", padding: "5px 12px", cursor: "pointer",
               }}
             >
@@ -668,19 +668,19 @@ export default function App() {
 
           {/* Area title & progress */}
           <div style={{ marginBottom: 28 }}>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 32, color: "#f0ede8", lineHeight: 1.1, marginBottom: 10 }}>{selectedArea}</div>
+            <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 32, color: "#f0ede8", lineHeight: 1.1, marginBottom: 10 }}>{selectedArea}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ flex: 1, height: 3, background: "#1e1e22", borderRadius: 2, overflow: "hidden" }}>
                 {(() => { const { rated, total } = areaScore(selectedArea); const color = areaAvgColor(selectedArea); return <div style={{ height: "100%", width: `${total > 0 ? (rated/total)*100 : 0}%`, background: color ?? "#333", transition: "width 0.4s", borderRadius: 2 }} />; })()}
               </div>
-              {(() => { const { rated, total } = areaScore(selectedArea); return <span style={{ fontSize: 11, fontFamily: "'Syne', sans-serif", fontWeight: 700, color: "#555", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{rated}/{total} RATED</span>; })()}
+              {(() => { const { rated, total } = areaScore(selectedArea); return <span style={{ fontSize: 11, fontFamily: "'Geist', sans-serif", fontWeight: 700, color: "#555", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{rated}/{total} RATED</span>; })()}
             </div>
           </div>
 
           {/* Edit categories mode */}
           {editingCats ? (
             <div style={{ background: "#111113", border: "1px solid #1e1e22", borderRadius: 14, padding: 20, marginBottom: 20 }}>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, color: "#888", letterSpacing: "0.1em", marginBottom: 16 }}>SECTIONS FOR THIS AREA</div>
+              <div style={{ fontFamily: "'Geist', sans-serif", fontWeight: 800, fontSize: 13, color: "#888", letterSpacing: "0.1em", marginBottom: 16 }}>SECTIONS FOR THIS AREA</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
                 {ALL_CATEGORIES.map(cat => {
                   const active = cats.includes(cat);
@@ -697,7 +697,7 @@ export default function App() {
                         border: `1px solid ${active ? "#f0ede8" : "#252528"}`,
                         background: active ? "#f0ede811" : "transparent",
                         color: active ? "#f0ede8" : "#555",
-                        fontFamily: "'Syne', sans-serif", fontWeight: 600,
+                        fontFamily: "'Geist', sans-serif", fontWeight: 600,
                         fontSize: 12, cursor: "pointer", letterSpacing: "0.04em",
                       }}
                     >
@@ -716,7 +716,7 @@ export default function App() {
                       border: "1px solid #f0ede8",
                       background: "#f0ede811",
                       color: "#f0ede8",
-                      fontFamily: "'Syne', sans-serif", fontWeight: 600,
+                      fontFamily: "'Geist', sans-serif", fontWeight: 600,
                       fontSize: 12, cursor: "pointer", letterSpacing: "0.04em",
                     }}
                   >
@@ -740,7 +740,7 @@ export default function App() {
                 />
                 <button
                   onClick={() => { if (newCatName.trim()) { setCats(selectedArea, [...cats, newCatName.trim()]); setNewCatName(""); } }}
-                  style={{ background: "#f0ede8", color: "#0a0a0a", border: "none", borderRadius: 8, padding: "8px 16px", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                  style={{ background: "#f0ede8", color: "#0a0a0a", border: "none", borderRadius: 8, padding: "8px 16px", fontFamily: "'Geist', sans-serif", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
                 >
                   ADD
                 </button>
@@ -750,7 +750,7 @@ export default function App() {
 
           {/* Category sections */}
           {cats.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "60px 0", color: "#444", fontFamily: "'Syne', sans-serif", fontSize: 12, letterSpacing: "0.1em" }}>
+            <div style={{ textAlign: "center", padding: "60px 0", color: "#444", fontFamily: "'Geist', sans-serif", fontSize: 12, letterSpacing: "0.1em" }}>
               NO SECTIONS — TAP "EDIT SECTIONS" TO ADD SOME
             </div>
           ) : (
