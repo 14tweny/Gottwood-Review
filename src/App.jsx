@@ -708,7 +708,7 @@ export default function App() {
             try{ const tasks=JSON.parse(row.notes??"[]"); const aId=row.area_id.replace(`${activeDept}__`,""); const key=`${activeFestival}__${activeYear}__${activeDept}__${aId}`; setTrackerData(p=>p[key]?p:{...p,[key]:tasks}); }catch(e){}
           });
           // Descriptions
-          deptData.filter(r=>r.category_id==="__desc__").forEach(row=>{
+          dd.filter(r=>r.category_id==="__desc__").forEach(row=>{
             const aId=row.area_id.replace(`${activeDept}__`,"");
             const key=`${activeFestival}__${activeYear}__${activeDept}__${aId}`;
             setAreaDescriptions(p=>p[key]?p:{...p,[key]:row.notes??""});
@@ -735,7 +735,7 @@ export default function App() {
           });
         }
         setLoading(false);
-      });
+      }).catch(()=>setLoading(false));
   }, [activeFestival,activeYear,activeDept]);
 
   // Tracker
