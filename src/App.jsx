@@ -617,16 +617,69 @@ export default function App() {
   const [activeDept, setActiveDept]   = useState(null);
   const [selectedArea, setSelectedArea] = useState(null);
 
-  // Per-event years & departments
+  // Per-event years & departments — synced to Supabase
   const [eventYears, setEventYears]   = useState(() => lsGet("14twenty_event_years", DEFAULT_YEARS));
   const [eventDepts, setEventDepts]   = useState(() => lsGet("14twenty_event_depts", {}));
+
+  // Keep localStorage as fast local cache, Supabase as source of truth
   useEffect(() => { lsSet("14twenty_event_years", eventYears); }, [eventYears]);
   useEffect(() => { lsSet("14twenty_event_depts", eventDepts); }, [eventDepts]);
 
+  // Load festival config (years + depts) from Supabase when a festival is selected
+  useEffect(() => {
+    if (!activeFestival) return;
+    supabase.from("reviews")
+      .select("category_id,notes")
+      .eq("festival", activeFestival)
+      .eq("year", "__config__")
+      .then(({ data }) => {
+        if (!data) return;
+        const yearsRow = data.find(r => r.category_id === "__years__");
+        const deptsRow = data.find(r => r.category_id === "__depts__");
+        if (yearsRow) {
+          try { const y = JSON.parse(yearsRow.notes); if (Array.isArray(y)) setEventYears(p => ({ ...p, [activeFestival]: y })); } catch(e) {}
+        }
+        if (deptsRow) {
+          try { const d = JSON.parse(deptsRow.notes); if (Array.isArray(d)) setEventDepts(p => ({ ...p, [activeFestival]: d })); } catch(e) {}
+        }
+      });
+  }, [activeFestival]);
+
+  async function saveYearsToDB(fid, years) {
+    await supabase.from("reviews").upsert({
+      festival: fid, year: "__config__",
+      area_id: "__years__", area_name: "__config__", area_emoji: "__config__",
+      category_id: "__years__", rating: null, worked_well: "", needs_improvement: "",
+      notes: JSON.stringify(years), updated_at: new Date().toISOString(),
+    }, { onConflict: "festival,year,area_id,category_id" });
+  }
+
+  async function saveDeptsToDB(fid, depts) {
+    await supabase.from("reviews").upsert({
+      festival: fid, year: "__config__",
+      area_id: "__depts__", area_name: "__config__", area_emoji: "__config__",
+      category_id: "__depts__", rating: null, worked_well: "", needs_improvement: "",
+      notes: JSON.stringify(depts), updated_at: new Date().toISOString(),
+    }, { onConflict: "festival,year,area_id,category_id" });
+  }
+
   function getYears(fid) { return eventYears[fid] ?? DEFAULT_YEARS[fid] ?? [CURRENT_YEAR]; }
   function getDepts(fid) { return eventDepts[fid] ?? DEFAULT_DEPTS; }
-  function setYearsFor(fid, fn) { setEventYears(p => ({ ...p, [fid]: typeof fn==="function" ? fn(getYears(fid)) : fn })); }
-  function setDeptsFor(fid, fn) { setEventDepts(p => ({ ...p, [fid]: typeof fn==="function" ? fn(getDepts(fid)) : fn })); }
+
+  function setYearsFor(fid, fn) {
+    setEventYears(p => {
+      const next = typeof fn === "function" ? fn(getYears(fid)) : fn;
+      saveYearsToDB(fid, next);
+      return { ...p, [fid]: next };
+    });
+  }
+  function setDeptsFor(fid, fn) {
+    setEventDepts(p => {
+      const next = typeof fn === "function" ? fn(getDepts(fid)) : fn;
+      saveDeptsToDB(fid, next);
+      return { ...p, [fid]: next };
+    });
+  }
 
   const activeYears = activeFestival ? getYears(activeFestival) : [];
   const activeDepts = activeFestival ? getDepts(activeFestival) : DEFAULT_DEPTS;
@@ -717,8 +770,17 @@ export default function App() {
             const key=`${activeFestival}__${activeYear}__${activeDept}__${aId}`;
             setAreaDescriptions(p=>p[key]?p:{...p,[key]:row.notes??""});
           });
+          // Saved category lists per area
+          dd.filter(r=>r.category_id==="__cats__").forEach(row=>{
+            try{
+              const aId=row.area_id.replace(`${activeDept}__`,"");
+              const key=`${activeFestival}__${activeDept}__${aId}`;
+              const cats=JSON.parse(row.notes??"null");
+              if(Array.isArray(cats)) setAreaCategories(p=>({...p,[key]:cats}));
+            }catch(e){}
+          });
           const map={};
-          dd.filter(r=>r.category_id!=="__tasks__"&&r.category_id!=="__areas__").forEach(row=>{
+          dd.filter(r=>r.category_id!=="__tasks__"&&r.category_id!=="__areas__"&&r.category_id!=="__cats__"&&r.category_id!=="__desc__").forEach(row=>{
             const aId=row.area_id.replace(`${activeDept}__`,"");
             let votes={};
             try{ if(row.worked_well?.startsWith("__votes__")) votes=JSON.parse(row.worked_well.slice(9)); }catch(e){}
@@ -799,8 +861,25 @@ export default function App() {
   }
 
   // Review helpers
-  const getCats=useCallback((aName)=>{ return areaCategories[`${activeFestival}__${activeDept}__${slugify(aName)}`]??(DEPT_REVIEW_CATS[activeDept]??[]); },[activeFestival,activeDept,areaCategories]);
-  const setCats=useCallback((aName,cats)=>{ setAreaCategories(p=>({...p,[`${activeFestival}__${activeDept}__${slugify(aName)}`]:cats})); },[activeFestival,activeDept]);
+  function getCats(aName) { return areaCategories[`${activeFestival}__${activeDept}__${slugify(aName)}`]??(DEPT_REVIEW_CATS[activeDept]??[]); }
+  function setCats(aName, newCats) {
+    const stateKey=`${activeFestival}__${activeDept}__${slugify(aName)}`;
+    setAreaCategories(p=>({...p,[stateKey]:newCats}));
+    if(!activeFestival||!activeYear||!activeDept) {
+      console.warn("setCats: missing context", {activeFestival,activeYear,activeDept});
+      return;
+    }
+    const aId=slugify(aName);
+    console.log("setCats saving:", {festival:activeFestival,year:activeYear,area_id:`${activeDept}__${aId}`,cats:newCats});
+    supabase.from("reviews").upsert({
+      festival:activeFestival, year:activeYear,
+      area_id:`${activeDept}__${aId}`, area_name:aName, area_emoji:activeDept,
+      category_id:"__cats__", rating:null, worked_well:"", needs_improvement:"",
+      notes:JSON.stringify(newCats),
+      updated_at:new Date().toISOString(),
+    },{onConflict:"festival,year,area_id,category_id"})
+    .then(({error})=>{ if(error) console.error("setCats save failed:", error); else console.log("setCats saved OK:", aName, newCats.length, "cats"); });
+  }
   const handleSave=useCallback(async(aName,catName,patch)=>{
     const aId=slugify(aName),catId=slugify(catName),key=`${aId}__${catId}`;
     setSaveStatuses(s=>({...s,[key]:"saving"}));
@@ -1160,4 +1239,3 @@ export default function App() {
     </div></>
   );
 }
-
