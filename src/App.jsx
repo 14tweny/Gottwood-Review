@@ -697,13 +697,17 @@ export default function App() {
   // Load data
   useEffect(() => {
     if(!activeFestival||!activeDept) return;
-    setAreas(p => { if(p[deptKey]) return p; return {...p,[deptKey]:DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept]??[]}; });
     if(!activeYear) return;
     setLoading(true);
     supabase.from("reviews").select("*").eq("festival",activeFestival).eq("year",activeYear)
       .then(({data,error})=>{
         if(!error&&data){
           const dd=data.filter(r=>r.area_emoji===activeDept);
+          // Canonical area list — stored as __areas__ row, falls back to defaults
+          const areasRow=dd.find(r=>r.category_id==="__areas__");
+          let canonicalAreas;
+          try{ canonicalAreas=areasRow?JSON.parse(areasRow.notes):null; }catch(e){ canonicalAreas=null; }
+          setAreas(p=>({...p,[deptKey]:canonicalAreas??DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept]??[]}));
           dd.filter(r=>r.category_id==="__tasks__").forEach(row=>{
             try{ const tasks=JSON.parse(row.notes??"[]"); const aId=row.area_id.replace(`${activeDept}__`,""); const key=`${activeFestival}__${activeYear}__${activeDept}__${aId}`; setTrackerData(p=>p[key]?p:{...p,[key]:tasks}); }catch(e){}
           });
@@ -714,7 +718,7 @@ export default function App() {
             setAreaDescriptions(p=>p[key]?p:{...p,[key]:row.notes??""});
           });
           const map={};
-          dd.filter(r=>r.category_id!=="__tasks__").forEach(row=>{
+          dd.filter(r=>r.category_id!=="__tasks__"&&r.category_id!=="__areas__").forEach(row=>{
             const aId=row.area_id.replace(`${activeDept}__`,"");
             let votes={};
             try{ if(row.worked_well?.startsWith("__votes__")) votes=JSON.parse(row.worked_well.slice(9)); }catch(e){}
@@ -726,17 +730,29 @@ export default function App() {
             };
           });
           setReviewData(map);
-          const dbAreas=[...new Map(dd.map(r=>[r.area_id.replace(`${activeDept}__`,""),r.area_name])).entries()];
-          setAreas(p=>{
-            const existing=p[deptKey]??DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept]??[];
-            const existingIds=new Set(existing.map(slugify));
-            const extras=dbAreas.filter(([id])=>!existingIds.has(id)&&id!=="__tasks__").map(([,name])=>name);
-            return{...p,[deptKey]:[...existing,...extras]};
-          });
         }
         setLoading(false);
       }).catch(()=>setLoading(false));
   }, [activeFestival,activeYear,activeDept]);
+
+  // Save area list to Supabase so all devices stay in sync
+  async function saveAreasToDB(newList) {
+    await supabase.from("reviews").upsert({
+      festival:activeFestival, year:activeYear,
+      area_id:`${activeDept}____areas__`, area_name:"__areas__", area_emoji:activeDept,
+      category_id:"__areas__", rating:null, worked_well:"", needs_improvement:"",
+      notes:JSON.stringify(newList),
+      updated_at:new Date().toISOString(),
+    },{onConflict:"festival,year,area_id,category_id"});
+  }
+
+  function updateAreas(fn) {
+    setAreas(p => {
+      const next = typeof fn === "function" ? fn(p[deptKey] ?? []) : fn;
+      saveAreasToDB(next);
+      return { ...p, [deptKey]: next };
+    });
+  }
 
   // Tracker
   function trackerKey(fid,yr,did,aName){ return `${fid}__${yr}__${did}__${slugify(aName)}`; }
@@ -914,25 +930,27 @@ export default function App() {
   // ── SCREEN: Year ──────────────────────────────────────────────────────────
   if(screen==="year") return(
     <><style>{css}</style>{passwordOverlay}
-    <div className="screen" style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#0a0a0a"}}>
-      <div style={{width:"100%",maxWidth:480}}>
-        <div style={{textAlign:"center",marginBottom:40}}>
-          <FestivalLogo festival={festival} size={52}/>
-          <div style={{fontWeight:700,fontSize:12,letterSpacing:"0.14em",color:"#444",marginTop:14}}>SELECT A YEAR</div>
+    <div className="screen" style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:"#0a0a0a"}}>
+      <div style={{paddingTop:56,paddingBottom:32,display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <FestivalLogo festival={festival} size={52}/>
+        <div style={{fontWeight:700,fontSize:12,letterSpacing:"0.14em",color:"#444",marginTop:14}}>SELECT A YEAR</div>
+      </div>
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 24px 48px"}}>
+        <div style={{width:"100%",maxWidth:480}}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {[...activeYears].reverse().map(y=>(
+              <button key={y} className="row-btn" onClick={()=>{setActiveYear(y);setScreen("departments");}}
+                style={{width:"100%",padding:"18px 24px",background:"#111113",border:"1px solid #1e1e22",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+                <span style={{fontWeight:700,fontSize:22,color:"#f0ede8",letterSpacing:"0.04em"}}>{y}</span>
+                <div style={{display:"flex",alignItems:"center",gap:10}}><ModeBadge tracker={isTrackerYear(y)}/><span style={{color:"#2a2a2e",fontSize:16}}>→</span></div>
+              </button>
+            ))}
+          </div>
+          <div style={{marginTop:18,display:"flex",justifyContent:"center"}}>
+            <button onClick={()=>setScreen("manage-years")} style={{background:"none",border:"1px solid #1e1e22",borderRadius:8,color:"#444",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer"}}>+ Manage Years</button>
+          </div>
+          {!isSupplier&&<button className="back-link" onClick={()=>setScreen("home")} style={{marginTop:20,background:"none",border:"none",cursor:"pointer",color:"#444",fontWeight:700,fontSize:11,letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6,padding:0}}>← BACK</button>}
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {[...activeYears].reverse().map(y=>(
-            <button key={y} className="row-btn" onClick={()=>{setActiveYear(y);setScreen("departments");}}
-              style={{width:"100%",padding:"18px 24px",background:"#111113",border:"1px solid #1e1e22",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-              <span style={{fontWeight:700,fontSize:22,color:"#f0ede8",letterSpacing:"0.04em"}}>{y}</span>
-              <div style={{display:"flex",alignItems:"center",gap:10}}><ModeBadge tracker={isTrackerYear(y)}/><span style={{color:"#2a2a2e",fontSize:16}}>→</span></div>
-            </button>
-          ))}
-        </div>
-        <div style={{marginTop:18,display:"flex",justifyContent:"center"}}>
-          <button onClick={()=>setScreen("manage-years")} style={{background:"none",border:"1px solid #1e1e22",borderRadius:8,color:"#444",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer"}}>+ Manage Years</button>
-        </div>
-        {!isSupplier&&<button className="back-link" onClick={()=>setScreen("home")} style={{marginTop:20,background:"none",border:"none",cursor:"pointer",color:"#444",fontWeight:700,fontSize:11,letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6,padding:0}}>← BACK</button>}
       </div>
     </div></>
   );
@@ -940,28 +958,30 @@ export default function App() {
   // ── SCREEN: Departments ───────────────────────────────────────────────────
   if(screen==="departments") return(
     <><style>{css}</style>
-    <div className="screen" style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#0a0a0a"}}>
-      <div style={{width:"100%",maxWidth:480}}>
-        <div style={{textAlign:"center",marginBottom:40}}>
-          <FestivalLogo festival={festival} size={52}/>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:12}}><span style={{fontWeight:700,fontSize:13,color:"#555"}}>{activeYear}</span><ModeBadge tracker={tracker}/></div>
-          <div style={{fontWeight:700,fontSize:12,letterSpacing:"0.14em",color:"#444",marginTop:8}}>SELECT A DEPARTMENT</div>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {activeDepts.map(d=>(
-            <button key={d.id} className="row-btn" onClick={()=>{setActiveDept(d.id);setScreen("areas");}}
-              style={{width:"100%",padding:"18px 24px",background:"#111113",border:"1px solid #1e1e22",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span style={{fontWeight:700,fontSize:16,color:"#f0ede8"}}>{d.name}</span>
-              <span style={{color:"#2a2a2e",fontSize:16}}>→</span>
-            </button>
-          ))}
-        </div>
-        {!isSupplier&&(
-          <div style={{marginTop:18,display:"flex",justifyContent:"center"}}>
-            <button onClick={()=>setScreen("manage-depts")} style={{background:"none",border:"1px solid #1e1e22",borderRadius:8,color:"#444",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer"}}>+ Manage Departments</button>
+    <div className="screen" style={{minHeight:"100vh",display:"flex",flexDirection:"column",background:"#0a0a0a"}}>
+      <div style={{paddingTop:56,paddingBottom:32,display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <FestivalLogo festival={festival} size={52}/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:12}}><span style={{fontWeight:700,fontSize:13,color:"#555"}}>{activeYear}</span><ModeBadge tracker={tracker}/></div>
+        <div style={{fontWeight:700,fontSize:12,letterSpacing:"0.14em",color:"#444",marginTop:8}}>SELECT A DEPARTMENT</div>
+      </div>
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 24px 48px"}}>
+        <div style={{width:"100%",maxWidth:480}}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {activeDepts.map(d=>(
+              <button key={d.id} className="row-btn" onClick={()=>{setActiveDept(d.id);setScreen("areas");}}
+                style={{width:"100%",padding:"18px 24px",background:"#111113",border:"1px solid #1e1e22",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{fontWeight:700,fontSize:16,color:"#f0ede8"}}>{d.name}</span>
+                <span style={{color:"#2a2a2e",fontSize:16}}>→</span>
+              </button>
+            ))}
           </div>
-        )}
-        <button className="back-link" onClick={()=>setScreen("year")} style={{marginTop:20,background:"none",border:"none",cursor:"pointer",color:"#444",fontWeight:700,fontSize:11,letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6,padding:0}}>← BACK</button>
+          {!isSupplier&&(
+            <div style={{marginTop:18,display:"flex",justifyContent:"center"}}>
+              <button onClick={()=>setScreen("manage-depts")} style={{background:"none",border:"1px solid #1e1e22",borderRadius:8,color:"#444",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer"}}>+ Manage Departments</button>
+            </div>
+          )}
+          <button className="back-link" onClick={()=>setScreen("year")} style={{marginTop:20,background:"none",border:"none",cursor:"pointer",color:"#444",fontWeight:700,fontSize:11,letterSpacing:"0.1em",display:"flex",alignItems:"center",gap:6,padding:0}}>← BACK</button>
+        </div>
       </div>
     </div></>
   );
@@ -985,7 +1005,7 @@ export default function App() {
             <div style={{fontSize:13,color:"#555"}}>{festivalAreas.length} areas · {activeYear} · {tracker?"Progress Tracker":"Review"}{isSupplier&&supplierToken?.filter?` · ${supplierToken.filter}`:""}</div>
           </div>
           {!isSupplier&&(
-            <button onClick={()=>setAreas(p=>({...p,[deptKey]:[...(p[deptKey]??[])].sort((a,b)=>a.localeCompare(b))}))}
+            <button onClick={()=>updateAreas(prev=>[...prev].sort((a,b)=>a.localeCompare(b)))}
               style={{marginTop:6,background:"transparent",border:"1px solid #252528",borderRadius:8,color:"#555",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.06em",whiteSpace:"nowrap",flexShrink:0}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
@@ -1026,11 +1046,11 @@ export default function App() {
                     {tracker?(()=>{const{total,done,blocked}=areaTaskStats(areaName);return<>{blocked>0&&<Pill label={`${blocked} blocked`} color="#ef4444"/>}<div style={{width:70,height:3,background:"#1e1e22",borderRadius:2,overflow:"hidden",flexShrink:0}}><div style={{height:"100%",width:`${total>0?(done/total)*100:0}%`,background:color??"#333",borderRadius:2}}/></div><span style={{fontSize:10,fontWeight:600,color:hasActivity?(color??"#888"):"#2a2a2e",letterSpacing:"0.06em",minWidth:36,textAlign:"right"}}>{done}/{total}</span></>;})():(()=>{const{rated,total}=areaReviewScore(areaName);return<><div style={{width:70,height:3,background:"#1e1e22",borderRadius:2,overflow:"hidden",flexShrink:0}}><div style={{height:"100%",width:`${total>0?(rated/total)*100:0}%`,background:color??"#333",borderRadius:2}}/></div><span style={{fontSize:10,fontWeight:600,color:hasActivity?(color??"#888"):"#2a2a2e",letterSpacing:"0.06em",minWidth:36,textAlign:"right"}}>{rated>0?`${rated}/${total}`:"—"}</span></>;})()}
                     <span style={{color:"#2a2a2e",fontSize:14}}>→</span>
                   </button>
-                  {!isSupplier&&<button className="del-btn" onClick={()=>{if(window.confirm(`Remove "${areaName}"?`))setAreas(p=>({...p,[deptKey]:p[deptKey].filter(a=>a!==areaName)}));}} style={{background:"#111113",border:"1px solid #1e1e22",borderRadius:12,color:"#333",cursor:"pointer",padding:"0 14px",fontSize:15,flexShrink:0}}>✕</button>}
+                  {!isSupplier&&<button className="del-btn" onClick={()=>{if(window.confirm(`Remove "${areaName}"?`))updateAreas(prev=>prev.filter(a=>a!==areaName));}} style={{background:"#111113",border:"1px solid #1e1e22",borderRadius:12,color:"#333",cursor:"pointer",padding:"0 14px",fontSize:15,flexShrink:0}}>✕</button>}
                 </div>
               );
             })}
-            {!isSupplier&&<AddRow placeholder="Area name..." onAdd={name=>setAreas(p=>({...p,[deptKey]:[...(p[deptKey]??[]),name]}))}/>}
+            {!isSupplier&&<AddRow placeholder="Area name..." onAdd={name=>updateAreas(prev=>[...prev,name])}/>}
           </div>
         )}
       </div>
@@ -1140,3 +1160,4 @@ export default function App() {
     </div></>
   );
 }
+
