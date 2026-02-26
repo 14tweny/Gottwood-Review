@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
-import { GOTTWOOD_LOGO, PEEP_LOGO } from "./logos.js";
+import { GOTTWOOD_LOGO, PEEP_LOGO, FOURTEEN_TWENTY_LOGO } from "./logos.js";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -420,9 +420,8 @@ export default function App() {
         <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#16161a" }}>
           <div style={{ width: "100%", maxWidth: 560 }}>
             <div style={{ textAlign: "center", marginBottom: 52 }}>
-              {/* 14twenty logo placeholder — replace img src with FOURTEEN_TWENTY_LOGO once uploaded */}
-              <div style={{ marginBottom: 20, display: "flex", justifyContent: "center", alignItems: "center" }}>
-                <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 22, letterSpacing: "0.14em", color: "#f0ede8" }}>14TWENTY</span>
+              <div style={{ marginBottom: 24, display: "flex", justifyContent: "center", alignItems: "center" }}>
+                <img src={FOURTEEN_TWENTY_LOGO} style={{ height: 48, objectFit: "contain", display: "block" }} alt="14twenty" />
               </div>
               <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#444", marginBottom: 6 }}>PRODUCTION REVIEW SYSTEM</div>
               <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A FESTIVAL</div>
