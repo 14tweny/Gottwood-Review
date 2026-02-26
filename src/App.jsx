@@ -719,12 +719,12 @@ export default function App() {
                 })}
               </div>
 
-              {/* Manage — subtle, tucked at the bottom */}
-              <div style={{ marginTop:48, display:"flex", justifyContent:"center", gap:8 }}>
-                {[["Years","manage-years"],["Departments","manage-depts"]].map(([label,s]) => (
-                  <button key={s} onClick={()=>setScreen(s)} style={{ background:"none", border:"none", color:"#2a2a2e", fontSize:11, fontWeight:600, padding:"6px 10px", cursor:"pointer", letterSpacing:"0.06em", transition:"color 0.12s" }}
-                    onMouseEnter={e=>e.currentTarget.style.color="#555"}
-                    onMouseLeave={e=>e.currentTarget.style.color="#2a2a2e"}>
+              {/* Manage — tucked at the bottom */}
+              <div style={{ marginTop:48, display:"flex", justifyContent:"center", gap:6 }}>
+                {[["Manage Years","manage-years"],["Manage Departments","manage-depts"]].map(([label,s]) => (
+                  <button key={s} onClick={()=>setScreen(s)} style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"7px 14px", cursor:"pointer", letterSpacing:"0.05em", transition:"color 0.12s, border-color 0.12s" }}
+                    onMouseEnter={e=>{ e.currentTarget.style.color="#aaa"; e.currentTarget.style.borderColor="#333"; }}
+                    onMouseLeave={e=>{ e.currentTarget.style.color="#555"; e.currentTarget.style.borderColor="#1e1e22"; }}>
                     {label}
                   </button>
                 ))}
