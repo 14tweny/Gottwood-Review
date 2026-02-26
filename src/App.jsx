@@ -11,6 +11,8 @@ const FESTIVALS = [
 ];
 
 const INITIAL_YEARS = ["2022","2023","2024","2025","2026"];
+function loadYears() { try { const s=localStorage.getItem("14twenty_years"); return s?JSON.parse(s):INITIAL_YEARS; } catch(e){ return INITIAL_YEARS; } }
+function saveYears(y) { try { localStorage.setItem("14twenty_years",JSON.stringify(y)); } catch(e){} }
 const CURRENT_YEAR  = "2026";
 
 const INITIAL_DEPARTMENTS = [
@@ -139,6 +141,9 @@ const css = `
   .fest-card{transition:background 0.15s,border-color 0.15s,transform 0.15s}
   .fest-card:hover{background:#1a1a1e!important;border-color:#333!important;transform:translateY(-2px)}
   textarea{resize:vertical;min-height:64px}
+  .drag-over{border-color:#555!important;background:#1a1a1e!important}
+  .dragging{opacity:0.4}
+
   textarea:focus,input:focus,select:focus{outline:none;border-color:#444!important}
 `;
 
@@ -202,6 +207,27 @@ function Overlay({ children }) {
   );
 }
 
+
+// ─── Inline editable title ────────────────────────────────────────────────────
+
+function InlineEdit({ value, onSave, style = {}, inputStyle = {} }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef(null);
+  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+  const commit = () => { const v = draft.trim(); if (v && v !== value) onSave(v); else setDraft(value); setEditing(false); };
+  if (editing) return (
+    <input ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)}
+      onBlur={commit} onKeyDown={e => { if (e.key==="Enter") commit(); if (e.key==="Escape") { setDraft(value); setEditing(false); } }}
+      style={{ background: "transparent", border: "none", borderBottom: "1px solid #555", color: "inherit", fontFamily: "inherit", fontWeight: "inherit", fontSize: "inherit", letterSpacing: "inherit", lineHeight: "inherit", padding: "0 0 2px 0", outline: "none", width: "100%", ...inputStyle }} />
+  );
+  return (
+    <span onDoubleClick={() => { setDraft(value); setEditing(true); }} style={{ cursor: "text", ...style }} title="Double-click to rename">
+      {value}
+    </span>
+  );
+}
+
 // ─── Review components ────────────────────────────────────────────────────────
 
 const lbSt = { fontSize: 10, fontWeight: 600, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase" };
@@ -223,7 +249,7 @@ function RatingBar({ value, onChange }) {
   );
 }
 
-function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove }) {
+function ReviewSection({ catName, onRename, data, onSave, saveKey, saveStatuses, onRemove }) {
   const status = saveStatuses[saveKey] ?? "idle";
   const [open, setOpen] = useState(false);
   const [local, setLocal] = useState({ rating: data?.rating ?? null, worked_well: data?.worked_well ?? "", needs_improvement: data?.needs_improvement ?? "", notes: data?.notes ?? "" });
@@ -237,7 +263,7 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove 
       <div style={{ display: "flex", alignItems: "stretch" }}>
         <button onClick={() => setOpen(!open)} style={{ flex: 1, display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
           <div style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, background: rating ? rating.color : "#252528", boxShadow: rating ? `0 0 6px ${rating.color}66` : "none" }} />
-          <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: "0.05em", flex: 1, color: rating || hasContent ? "#e8e4df" : "#555" }}>{catName.toUpperCase()}</span>
+          <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: "0.05em", flex: 1, color: rating || hasContent ? "#e8e4df" : "#555" }}><InlineEdit value={catName} onSave={onRename} /></span>
           {status === "saving" && <span style={{ fontSize: 10, color: "#555" }}>SAVING…</span>}
           {status === "saved" && <span className="save-pulse" style={{ fontSize: 10, color: "#22c55e" }}>SAVED</span>}
           {rating && !open && <span style={{ fontSize: 10, fontWeight: 700, color: rating.color, letterSpacing: "0.06em" }}>{rating.label.toUpperCase()}</span>}
@@ -288,7 +314,7 @@ function TaskRow({ task, onChange, onDelete, userName }) {
     <div className="task-row" style={{ background: "#111113", borderRadius: 10, border: `1px solid ${expanded ? "#2a2a30" : "#1e1e22"}`, overflow: "hidden", transition: "border-color 0.2s" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px" }}>
         <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: st.color, boxShadow: task.status !== "not-started" ? `0 0 5px ${st.color}66` : "none" }} />
-        <span onClick={() => setExpanded(!expanded)} style={{ flex: 1, fontSize: 13, fontWeight: 500, color: task.status === "done" ? "#444" : "#d0ccc8", textDecoration: task.status === "done" ? "line-through" : "none", cursor: "pointer", lineHeight: 1.4 }}>{task.label}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: task.status === "done" ? "#444" : "#d0ccc8", textDecoration: task.status === "done" ? "line-through" : "none", lineHeight: 1.4 }}><InlineEdit value={task.label} onSave={v => onChange({...task, label: v})} style={{ cursor: "text" }} /></span><span onClick={() => setExpanded(!expanded)} style={{ cursor: "pointer", color: "#333", fontSize: 10, padding: "0 2px", flexShrink: 0 }}>↕</span>
         {task.owner && <span style={{ fontSize: 10, color: "#666", background: "#1e1e22", padding: "2px 8px", borderRadius: 20, letterSpacing: "0.04em", flexShrink: 0 }}>{task.owner}</span>}
         {task.due && (() => { const overdue = new Date(task.due) < new Date() && task.status !== "done"; return <span style={{ fontSize: 10, color: overdue ? "#ef4444" : "#555", flexShrink: 0 }}>{new Date(task.due).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</span>; })()}
         <StatusSelect value={task.status} onChange={v => onChange({ ...task, status: v, updated_by: userName })} />
@@ -316,6 +342,104 @@ function TaskRow({ task, onChange, onDelete, userName }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ─── Document uploads ─────────────────────────────────────────────────────────
+
+function DocAttachments({ festival, year, dept, areaName }) {
+  const [docs, setDocs]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef(null);
+  const prefix = `${festival}/${year}/${dept}/${slugify(areaName)}/`;
+
+  useEffect(() => {
+    supabase.storage.from("documents").list(prefix)
+      .then(({ data, error }) => {
+        if (!error && data) setDocs(data.filter(f => f.name !== ".emptyFolderPlaceholder"));
+        setLoading(false);
+      });
+  }, [prefix]);
+
+  async function upload(file) {
+    if (!file) return;
+    const allowed = ["application/pdf","image/jpeg","image/png","image/webp","image/gif"];
+    if (!allowed.includes(file.type)) { alert("Only PDFs and images are supported."); return; }
+    if (file.size > 20 * 1024 * 1024) { alert("File must be under 20MB."); return; }
+    setUploading(true);
+    const path = `${prefix}${Date.now()}_${file.name}`;
+    const { error } = await supabase.storage.from("documents").upload(path, file);
+    if (!error) {
+      const { data: list } = await supabase.storage.from("documents").list(prefix);
+      if (list) setDocs(list.filter(f => f.name !== ".emptyFolderPlaceholder"));
+    }
+    setUploading(false);
+  }
+
+  async function remove(name) {
+    if (!window.confirm(`Delete "${name}"?`)) return;
+    await supabase.storage.from("documents").remove([`${prefix}${name}`]);
+    setDocs(prev => prev.filter(d => d.name !== name));
+  }
+
+  function getUrl(name) {
+    const { data } = supabase.storage.from("documents").getPublicUrl(`${prefix}${name}`);
+    return data.publicUrl;
+  }
+
+  function fileIcon(name) {
+    if (name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) return "🖼";
+    return "📄";
+  }
+
+  function cleanName(name) {
+    return name.replace(/^\d+_/, "");
+  }
+
+  return (
+    <div style={{ marginBottom: 24, background: "#111113", border: "1px solid #1e1e22", borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: docs.length > 0 ? "1px solid #1a1a1e" : "none" }}>
+        <span style={{ fontWeight: 700, fontSize: 12, color: "#555", letterSpacing: "0.08em" }}>DOCUMENTS & FILES</span>
+        <button onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          style={{ background: "transparent", border: "1px solid #252528", borderRadius: 8, color: uploading ? "#444" : "#888", fontSize: 11, fontWeight: 600, padding: "4px 12px", cursor: uploading ? "default" : "pointer", letterSpacing: "0.04em", transition: "all 0.12s" }}
+          onMouseEnter={e => { if(!uploading){ e.currentTarget.style.borderColor="#444"; e.currentTarget.style.color="#f0ede8"; }}}
+          onMouseLeave={e => { e.currentTarget.style.borderColor="#252528"; e.currentTarget.style.color="#888"; }}>
+          {uploading ? "UPLOADING…" : "+ ATTACH"}
+        </button>
+        <input ref={inputRef} type="file" accept=".pdf,image/*" style={{ display: "none" }} onChange={e => upload(e.target.files?.[0])} />
+      </div>
+
+      {loading && <div style={{ padding: "12px 18px", fontSize: 11, color: "#444" }}>Loading…</div>}
+
+      {!loading && docs.length === 0 && (
+        <div style={{ padding: "14px 18px", fontSize: 12, color: "#333", fontStyle: "italic" }}>No files attached. Click + Attach to upload a PDF or image.</div>
+      )}
+
+      {docs.map(doc => {
+        const url = getUrl(doc.name);
+        const display = cleanName(doc.name);
+        const isImage = doc.name.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+        return (
+          <div key={doc.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", borderTop: "1px solid #1a1a1e" }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>{fileIcon(doc.name)}</span>
+            <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 12, color: "#a0c4ff", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              onMouseEnter={e => e.currentTarget.style.textDecoration="underline"}
+              onMouseLeave={e => e.currentTarget.style.textDecoration="none"}>
+              {display}
+            </a>
+            {isImage && (
+              <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: "#555", textDecoration: "none", border: "1px solid #252528", borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap" }}>Preview</a>
+            )}
+            <button onClick={() => remove(doc.name)} style={{ background: "none", border: "none", color: "#2a2a2e", fontSize: 14, cursor: "pointer", padding: "0 2px", flexShrink: 0, transition: "color 0.12s" }}
+              onMouseEnter={e => e.currentTarget.style.color="#ef4444"}
+              onMouseLeave={e => e.currentTarget.style.color="#2a2a2e"}>✕</button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -422,8 +546,10 @@ export default function App() {
   const [activeDept, setActiveDept]       = useState(null);
   const [selectedArea, setSelectedArea]   = useState(null);
 
-  const [years, setYears]                 = useState(INITIAL_YEARS);
+  const [years, setYears]                 = useState(loadYears);
   const [departments, setDepartments]     = useState(INITIAL_DEPARTMENTS);
+  // Persist years to localStorage on every change
+  useEffect(() => { saveYears(years); }, [years]);
   const [areas, setAreas]                 = useState({});
   const [areaCategories, setAreaCategories] = useState({});
 
@@ -897,7 +1023,7 @@ export default function App() {
                     <button className="row-btn" onClick={()=>{setSelectedArea(areaName);setScreen("area-detail");setEditingCats(false);}}
                       style={{flex:1,background:"#111113",border:"1px solid #1e1e22",borderRadius:12,cursor:"pointer",textAlign:"left",padding:"15px 18px",display:"flex",alignItems:"center",gap:14}}>
                       <div style={{width:9,height:9,borderRadius:"50%",flexShrink:0,background:hasActivity?(color??"#555"):"#252528",boxShadow:hasActivity&&color?`0 0 6px ${color}66`:"none"}}/>
-                      <span style={{fontWeight:700,fontSize:14,color:hasActivity?"#e8e4df":"#666",flex:1}}>{areaName}</span>
+                      <span style={{fontWeight:700,fontSize:14,color:hasActivity?"#e8e4df":"#666",flex:1}}><InlineEdit value={areaName} onSave={newName=>setAreas(prev=>({...prev,[deptKey]:prev[deptKey].map(a=>a===areaName?newName:a)}))} /></span>
                       {tracker?(()=>{
                         const{total,done,blocked}=areaTaskStats(areaName);
                         return <>{blocked>0&&<Pill label={`${blocked} blocked`} color="#ef4444"/>}
@@ -987,6 +1113,9 @@ export default function App() {
             })()}
           </div>
 
+          {/* ── DOCUMENTS ── */}
+          <DocAttachments festival={activeFestival} year={activeYear} dept={activeDept} areaName={selectedArea}/>
+
           {/* ── TRACKER ── */}
           {tracker&&(
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -999,6 +1128,14 @@ export default function App() {
                   <button onClick={()=>copyTasksFromYear(prevYear,selectedArea)} style={{background:"#eab308",color:"#0a0a0a",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>Copy from {prevYear}</button>
                 </div>
               )}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:4}}>
+                <button onClick={()=>setAreaTasks(selectedArea,[...areaTasks].sort((a,b)=>a.label.localeCompare(b.label)))}
+                  style={{background:"transparent",border:"1px solid #252528",borderRadius:7,color:"#555",fontSize:10,fontWeight:600,padding:"4px 10px",cursor:"pointer",letterSpacing:"0.06em",transition:"all 0.12s"}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#aaa";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                  A→Z
+                </button>
+              </div>
               {[{id:"blocked",label:"Blocked"},{id:"in-progress",label:"In Progress"},{id:"not-started",label:"Not Started"},{id:"done",label:"Done"}].map(group=>{
                 const grouped=areaTasks.filter(t=>t.status===group.id);
                 if(!grouped.length) return null;
@@ -1045,12 +1182,25 @@ export default function App() {
               {cats.length===0?(
                 <div style={{textAlign:"center",padding:"60px 0",color:"#444",fontSize:12,letterSpacing:"0.1em"}}>NO SECTIONS — TAP "EDIT SECTIONS" TO ADD SOME</div>
               ):(
+                <>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:8}}>
+                  <button onClick={()=>setCats(selectedArea,[...cats].sort((a,b)=>a.localeCompare(b)))}
+                    style={{background:"transparent",border:"1px solid #252528",borderRadius:7,color:"#555",fontSize:10,fontWeight:600,padding:"4px 10px",cursor:"pointer",letterSpacing:"0.06em",transition:"all 0.12s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#aaa";}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                    A→Z
+                  </button>
+                </div>
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   {cats.map(cat=>{
                     const key=`${areaId}__${slugify(cat)}`;
-                    return<ReviewSection key={key} catName={cat} data={reviewData[key]} saveKey={key} saveStatuses={saveStatuses} onSave={patch=>handleSave(selectedArea,cat,patch)} onRemove={()=>setCats(selectedArea,cats.filter(c=>c!==cat))}/>;
+                    return<ReviewSection key={key} catName={cat} data={reviewData[key]} saveKey={key} saveStatuses={saveStatuses}
+                      onSave={patch=>handleSave(selectedArea,cat,patch)}
+                      onRename={newName=>setCats(selectedArea,cats.map(c=>c===cat?newName:c))}
+                      onRemove={()=>setCats(selectedArea,cats.filter(c=>c!==cat))}/>;
                   })}
                 </div>
+                </>
               )}
               <div style={{marginTop:32,paddingTop:24,borderTop:"1px solid #1a1a1e"}}>
                 <button onClick={()=>exportReviewPDF({festival,year:activeYear,areas:festivalAreas,reviewData,getCats})}
