@@ -60,7 +60,7 @@ const css = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Instrument+Sans:wght@400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body, #root { height: 100%; }
-  body { background: #16161a; color: #f0ede8; font-family: 'Instrument Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #0a0a0a; color: #f0ede8; font-family: 'Instrument Sans', sans-serif; -webkit-font-smoothing: antialiased; }
   ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
   button { font-family: inherit; } textarea, input { font-family: inherit; }
 
@@ -417,11 +417,11 @@ export default function App() {
     return (
       <>
         <style>{css}</style>
-        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#16161a" }}>
+        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#0a0a0a" }}>
           <div style={{ width: "100%", maxWidth: 560 }}>
             <div style={{ textAlign: "center", marginBottom: 52 }}>
               <div style={{ marginBottom: 24, display: "flex", justifyContent: "center", alignItems: "center" }}>
-                <img src={FOURTEEN_TWENTY_LOGO} style={{ height: 48, objectFit: "contain", display: "block" }} alt="14twenty" />
+                <img src={FOURTEEN_TWENTY_LOGO} style={{ height: 96, objectFit: "contain", display: "block" }} alt="14twenty" />
               </div>
               <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#444", marginBottom: 6 }}>PRODUCTION REVIEW SYSTEM</div>
               <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A FESTIVAL</div>
@@ -468,7 +468,7 @@ export default function App() {
     return (
       <>
         <style>{css}</style>
-        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#16161a" }}>
+        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#0a0a0a" }}>
           <div style={{ width: "100%", maxWidth: 560 }}>
             <div style={{ textAlign: "center", marginBottom: 52 }}>
               <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#333", marginBottom: 16 }}>PRODUCTION REVIEW SYSTEM</div>
@@ -512,10 +512,10 @@ export default function App() {
     return (
       <>
         <style>{css}</style>
-        <div className="screen" style={{ minHeight: "100vh", background: "#16161a" }}>
+        <div className="screen" style={{ minHeight: "100vh", background: "#0a0a0a" }}>
 
           {/* Header */}
-          <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#16161aee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
+          <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#0a0a0aee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
             <div style={{ maxWidth: 700, margin: "0 auto", height: 56, display: "flex", alignItems: "center", gap: 14 }}>
               <button className="back-btn" onClick={() => setScreen("year")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
               <FestivalLogo festival={festival} active={true} />
@@ -610,9 +610,9 @@ export default function App() {
                       autoFocus value={newAreaName} onChange={e => setNewAreaName(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter") addArea(); if (e.key === "Escape") setAddingArea(false); }}
                       placeholder="Area name..."
-                      style={{ flex: 1, background: "#16161a", border: "1px solid #333", borderRadius: 7, color: "#f0ede8", padding: "8px 10px", fontSize: 13 }}
+                      style={{ flex: 1, background: "#0a0a0a", border: "1px solid #333", borderRadius: 7, color: "#f0ede8", padding: "8px 10px", fontSize: 13 }}
                     />
-                    <button onClick={addArea} style={{ background: "#f0ede8", color: "#16161a", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: "'Syne', sans-serif", cursor: "pointer" }}>ADD</button>
+                    <button onClick={addArea} style={{ background: "#f0ede8", color: "#0a0a0a", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: "'Syne', sans-serif", cursor: "pointer" }}>ADD</button>
                     <button onClick={() => setAddingArea(false)} style={{ background: "transparent", color: "#555", border: "1px solid #252528", borderRadius: 7, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>✕</button>
                   </div>
                 ) : (
@@ -639,10 +639,10 @@ export default function App() {
   return (
     <>
       <style>{css}</style>
-      <div className="screen" style={{ minHeight: "100vh", background: "#16161a" }}>
+      <div className="screen" style={{ minHeight: "100vh", background: "#0a0a0a" }}>
 
         {/* Header */}
-        <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#16161aee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#0a0a0aee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
           <div style={{ maxWidth: 700, margin: "0 auto", height: 56, display: "flex", alignItems: "center", gap: 12 }}>
             <button className="back-btn" onClick={() => setScreen("areas")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
             <FestivalLogo festival={festival} active={true} />
@@ -736,11 +736,11 @@ export default function App() {
                     }
                   }}
                   placeholder="Add custom section (e.g. Fencing)..."
-                  style={{ flex: 1, background: "#16161a", border: "1px solid #252528", borderRadius: 8, color: "#f0ede8", padding: "8px 12px", fontSize: 13 }}
+                  style={{ flex: 1, background: "#0a0a0a", border: "1px solid #252528", borderRadius: 8, color: "#f0ede8", padding: "8px 12px", fontSize: 13 }}
                 />
                 <button
                   onClick={() => { if (newCatName.trim()) { setCats(selectedArea, [...cats, newCatName.trim()]); setNewCatName(""); } }}
-                  style={{ background: "#f0ede8", color: "#16161a", border: "none", borderRadius: 8, padding: "8px 16px", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                  style={{ background: "#f0ede8", color: "#0a0a0a", border: "none", borderRadius: 8, padding: "8px 16px", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
                 >
                   ADD
                 </button>
