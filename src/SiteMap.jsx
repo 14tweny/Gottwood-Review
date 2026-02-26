@@ -1,24 +1,52 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
+// Full SVG viewBox
 const VB_W = 1869.52;
 const VB_H = 3220.29;
 
-const CROP = { x: 680, y: 580, w: 640, h: 650 };
+// Crop to the full grid extent (with padding)
+const CROP = { x: 260, y: 0, w: 1560, h: 1960 };
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 8;
+const MAX_ZOOM = 10;
 
-const GOTTWOOD_HOTSPOTS = [
-  { svgId: "TREEHOUSE_STAGE",      area: "Treehouse Stage", cx: 983.2,  cy: 686.8,  r: 55 },
-  { svgId: "THE_BARN",             area: "The Barn",        cx: 975.4,  cy: 808.8,  r: 52 },
-  { svgId: "WALLED_GARDEN",        area: "Walled Garden",   cx: 866.8,  cy: 758.7,  r: 55 },
-  { svgId: "TRIGON",               area: "Trigon",          cx: 794.0,  cy: 969.7,  r: 48 },
-  { svgId: "THE_NEST",             area: "The Nest",        cx: 1036.9, cy: 938.9,  r: 44 },
-  { svgId: "THR_LIGHTHOUSE",       area: "The Lighthouse",  cx: 975.0,  cy: 1010.0, r: 44 },
-  { svgId: "NEW_CURVE",            area: "The Curve",       cx: 1202.5, cy: 1035.2, r: 50 },
-  { svgId: "LAWN_STAGE",           area: "The Lawn",        cx: 941.2,  cy: 913.8,  r: 52 },
-  { svgId: "RICKY_S_DISCO_TIPI_s", area: "Rickies Disco",   cx: 949.8,  cy: 1083.5, r: 44 },
-  { svgId: "CREW_CATERING",        area: "Crew Catering",   cx: 832.5,  cy: 885.8,  r: 40 },
+// Master lookup: maps every possible area name (and common variations)
+// to its SVG layer ID and precise centre coordinates.
+// The app uses this to automatically match areas to hotspots —
+// no manual wiring needed when areas are added, as long as the SVG layer exists.
+const SVG_AREA_LOOKUP = [
+  // Stages / Venues
+  { svgId: "TREEHOUSE_STAGE",      names: ["treehouse stage", "treehouse"],          cx: 983.2,  cy: 686.8  },
+  { svgId: "THE_BARN",             names: ["the barn", "barn"],                      cx: 975.4,  cy: 808.8  },
+  { svgId: "WALLED_GARDEN",        names: ["walled garden"],                         cx: 866.8,  cy: 758.7  },
+  { svgId: "TRIGON",               names: ["trigon"],                                cx: 794.0,  cy: 969.7  },
+  { svgId: "THE_NEST",             names: ["the nest", "nest"],                      cx: 1036.9, cy: 938.9  },
+  { svgId: "THR_LIGHTHOUSE",       names: ["the lighthouse", "lighthouse"],          cx: 974.0,  cy: 1007.0 },
+  { svgId: "NEW_CURVE",            names: ["the curve", "new curve", "cocktail bar (old curve)", "curve"], cx: 1202.5, cy: 1035.2 },
+  { svgId: "LAWN_STAGE",           names: ["the lawn", "lawn stage", "lawn"],        cx: 941.2,  cy: 913.8  },
+  { svgId: "RICKY_S_DISCO_TIPI_s", names: ["rickies disco", "ricky's disco", "disco tipi"], cx: 949.8, cy: 1083.5 },
+  { svgId: "TRADERS-2",            names: ["woods traders", "traders", "top woods"], cx: 1038.9, cy: 652.3  },
+  { svgId: "POND_LIFE",            names: ["pond life", "pond"],                     cx: 1171.4, cy: 629.3  },
+  // Infrastructure
+  { svgId: "CREW_CATERING",        names: ["crew catering", "catering"],             cx: 832.5,  cy: 885.8  },
+  { svgId: "MEDICAL",              names: ["medical", "first aid"],                  cx: 922.1,  cy: 869.1  },
+  { svgId: "OFFICE_STORAGE",       names: ["site office", "office", "event office"], cx: 852.5,  cy: 809.1  },
+  { svgId: "BOXFORD_MASK",         names: ["boxford", "boxford stage"],              cx: 912.6,  cy: 842.5  },
+  { svgId: "WATER_SANITATION",     names: ["water", "water & sanitation", "water sanitation"], cx: 940.0, cy: 1050.0 },
+  { svgId: "SHOWERS_4_BAY",        names: ["showers", "shower block"],              cx: 880.0,  cy: 950.0  },
+  { svgId: "CAMPSITE_MEDICAL",     names: ["campsite medical", "campsite first aid"], cx: 922.1, cy: 869.1  },
+  { svgId: "GEODESIC_DOME",        names: ["geodesic dome", "dome"],                 cx: 941.2,  cy: 913.8  },
+  { svgId: "GATES",                names: ["main gate", "gates", "entrance", "gate"], cx: 1109.8, cy: 1815.4 },
+  { svgId: "STRETCH_TENT",         names: ["stretch tent"],                          cx: 639.3,  cy: 511.1  },
 ];
+
+// Normalise an area name for matching
+function norm(s) { return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim(); }
+
+// Given an area name, find a matching hotspot entry
+function findHotspot(areaName) {
+  const n = norm(areaName);
+  return SVG_AREA_LOOKUP.find(h => h.names.some(alias => norm(alias) === n));
+}
 
 export default function SiteMap({ festival, areas, getAreaColor, onAreaTap, tracker }) {
   const [svgContent, setSvgContent] = useState(null);
@@ -73,7 +101,10 @@ export default function SiteMap({ festival, areas, getAreaColor, onAreaTap, trac
     return () => el.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
 
-  function onMouseDown(e) { dragging.current = true; lastMouse.current = { x: e.clientX, y: e.clientY }; }
+  function onMouseDown(e) {
+    dragging.current = true;
+    lastMouse.current = { x: e.clientX, y: e.clientY };
+  }
   function onMouseMove(e) {
     if (!dragging.current || !lastMouse.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -113,20 +144,33 @@ export default function SiteMap({ festival, areas, getAreaColor, onAreaTap, trac
   }
   function onTouchEnd() { lastTouch.current = null; lastPinchDist.current = null; }
 
+  // Dynamic viewBox
   const cropW = CROP.w / zoom;
   const cropH = CROP.h / zoom;
   const cropX = CROP.x + CROP.w / 2 - cropW / 2 + pan.x;
   const cropY = CROP.y + CROP.h / 2 - cropH / 2 + pan.y;
 
+  // Automatically match each area to a hotspot entry
   const colorMap = {};
   areas.forEach(a => { const c = getAreaColor(a); if (c) colorMap[a] = c; });
-  const activeHotspots = GOTTWOOD_HOTSPOTS.filter(h => areas.includes(h.area));
+
+  const hotspots = areas
+    .map(areaName => {
+      const match = findHotspot(areaName);
+      if (!match) return null;
+      return { ...match, area: areaName };
+    })
+    .filter(Boolean)
+    // Deduplicate by svgId (same SVG layer, different area names)
+    .filter((h, i, arr) => arr.findIndex(x => x.svgId === h.svgId) === i);
+
   const hs = 1 / zoom;
+  const R  = 38; // base hotspot radius in SVG units
 
   const btnStyle = (disabled) => ({
-    width: 34, height: 34, background: "#fff", border: "1px solid #ddd", borderRadius: 8,
-    fontSize: 20, fontWeight: 300, color: disabled ? "#ccc" : "#444",
-    cursor: disabled ? "default" : "pointer",
+    width: 34, height: 34, background: "#fff", border: "1px solid #ddd",
+    borderRadius: 8, fontSize: 20, fontWeight: 300,
+    color: disabled ? "#ccc" : "#444", cursor: disabled ? "default" : "pointer",
     display: "flex", alignItems: "center", justifyContent: "center",
     boxShadow: "0 1px 4px rgba(0,0,0,0.08)", userSelect: "none",
   });
@@ -136,7 +180,8 @@ export default function SiteMap({ festival, areas, getAreaColor, onAreaTap, trac
       <div
         ref={containerRef}
         style={{ position: "relative", width: "100%", paddingBottom: `${(CROP.h / CROP.w) * 100}%`, cursor: "grab", userSelect: "none" }}
-        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+        onMouseDown={onMouseDown} onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
         onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
       >
         <svg
@@ -144,44 +189,49 @@ export default function SiteMap({ festival, areas, getAreaColor, onAreaTap, trac
           style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", background: "#fff" }}
           preserveAspectRatio="xMidYMid meet"
         >
+          {/* Inline map — crisp vectors at any zoom */}
           {svgContent && <g dangerouslySetInnerHTML={{ __html: svgContent }} />}
 
-          {activeHotspots.map(spot => {
+          {/* Auto-matched hotspots */}
+          {hotspots.map(spot => {
             const color    = colorMap[spot.area] ?? "#aaaacc";
             const isActive = !!colorMap[spot.area];
             const isHov    = hovered === spot.area;
-            const r        = spot.r * hs;
+            const r        = R * hs;
+
             return (
-              <g key={spot.svgId}
+              <g key={`${spot.svgId}-${spot.area}`}
                 onClick={() => onAreaTap(spot.area)}
                 onMouseEnter={() => setHovered(spot.area)}
                 onMouseLeave={() => setHovered(null)}
                 style={{ cursor: "pointer" }}
               >
                 {isActive && (
-                  <circle cx={spot.cx} cy={spot.cy} r={r + 10 * hs}
+                  <circle cx={spot.cx} cy={spot.cy} r={r + 14 * hs}
                     fill="none" stroke={color}
-                    strokeWidth={isHov ? 2 * hs : 1 * hs}
-                    opacity={isHov ? 0.6 : 0.2} style={{ transition: "all 0.15s" }}
+                    strokeWidth={isHov ? 2.5 * hs : 1.5 * hs}
+                    opacity={isHov ? 0.55 : 0.18}
+                    style={{ transition: "all 0.15s" }}
                   />
                 )}
                 <circle cx={spot.cx} cy={spot.cy} r={r}
-                  fill={isActive ? color : "#e8e8f4"}
-                  fillOpacity={isActive ? (isHov ? 0.5 : 0.25) : 0.12}
-                  stroke={color}
-                  strokeWidth={(isHov ? 2 : isActive ? 1.5 : 0.8) * hs}
-                  strokeOpacity={isHov ? 1 : isActive ? 0.75 : 0.3}
+                  fill={isActive ? color : "#e8e8f0"}
+                  fillOpacity={isActive ? (isHov ? 0.5 : 0.22) : 0.1}
+                  stroke={isActive ? color : "#aaaacc"}
+                  strokeWidth={(isHov ? 2.5 : isActive ? 1.8 : 0.8) * hs}
+                  strokeOpacity={isHov ? 1 : isActive ? 0.7 : 0.25}
                   style={{ transition: "all 0.15s" }}
                 />
-                <text x={spot.cx} y={spot.cy}
+                <text
+                  x={spot.cx} y={spot.cy}
                   textAnchor="middle" dominantBaseline="middle"
                   fill={isActive ? color : "#aaa"}
-                  fontSize={11 * hs} fontWeight="700"
+                  fontSize={10 * hs} fontWeight="700"
                   fontFamily="system-ui, sans-serif"
                   style={{ pointerEvents: "none" }}
                 >
                   {spot.area.split(" ").map((word, i, arr) => (
-                    <tspan key={i} x={spot.cx} dy={i === 0 ? -(arr.length - 1) * 6 * hs : 12 * hs}>
+                    <tspan key={i} x={spot.cx} dy={i === 0 ? -(arr.length - 1) * 5.5 * hs : 11 * hs}>
                       {word}
                     </tspan>
                   ))}
@@ -198,9 +248,13 @@ export default function SiteMap({ festival, areas, getAreaColor, onAreaTap, trac
         )}
 
         <div style={{ position: "absolute", top: 10, right: 10, display: "flex", flexDirection: "column", gap: 4, zIndex: 10 }}>
-          <button style={btnStyle(zoom >= MAX_ZOOM)} onClick={() => applyZoom(0.5)}>+</button>
-          <button style={btnStyle(zoom <= MIN_ZOOM)} onClick={() => applyZoom(-0.5)}>−</button>
-          {zoom > 1 && <button style={{ ...btnStyle(false), fontSize: 10, fontWeight: 700, color: "#888" }} onClick={resetView}>FIT</button>}
+          <button style={btnStyle(zoom >= MAX_ZOOM)} onClick={() => applyZoom(0.75)}>+</button>
+          <button style={btnStyle(zoom <= MIN_ZOOM)} onClick={() => applyZoom(-0.75)}>−</button>
+          {zoom > 1 && (
+            <button style={{ ...btnStyle(false), fontSize: 10, fontWeight: 700, color: "#888" }} onClick={resetView}>
+              FIT
+            </button>
+          )}
         </div>
 
         {zoom > 1 && (
@@ -210,6 +264,7 @@ export default function SiteMap({ festival, areas, getAreaColor, onAreaTap, trac
         )}
       </div>
 
+      {/* Legend */}
       <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 14, borderTop: "1px solid #eee", flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: "#aaa", letterSpacing: "0.1em" }}>
           {tracker ? "TRACKER STATUS" : "REVIEW STATUS"}
