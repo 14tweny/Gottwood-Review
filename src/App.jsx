@@ -60,7 +60,7 @@ const css = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Instrument+Sans:wght@400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body, #root { height: 100%; }
-  body { background: #0c0c0e; color: #f0ede8; font-family: 'Instrument Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+  body { background: #16161a; color: #f0ede8; font-family: 'Instrument Sans', sans-serif; -webkit-font-smoothing: antialiased; }
   ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
   button { font-family: inherit; } textarea, input { font-family: inherit; }
 
@@ -288,10 +288,10 @@ const taSt = (bg) => ({
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  // Navigation: "festivals" | "areas" | "area-detail"
+  // Navigation: "festivals" | "year" | "areas" | "area-detail"
   const [screen, setScreen] = useState("festivals");
   const [activeFestival, setActiveFestival] = useState(null);
-  const [activeYear, setActiveYear] = useState("2025");
+  const [activeYear, setActiveYear] = useState(null);
   const [selectedArea, setSelectedArea] = useState(null);
 
   // Data
@@ -417,10 +417,14 @@ export default function App() {
     return (
       <>
         <style>{css}</style>
-        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#0c0c0e" }}>
+        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#16161a" }}>
           <div style={{ width: "100%", maxWidth: 560 }}>
             <div style={{ textAlign: "center", marginBottom: 52 }}>
-              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#333", marginBottom: 6 }}>PRODUCTION REVIEW SYSTEM</div>
+              {/* 14twenty logo placeholder — replace img src with FOURTEEN_TWENTY_LOGO once uploaded */}
+              <div style={{ marginBottom: 20, display: "flex", justifyContent: "center", alignItems: "center" }}>
+                <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 22, letterSpacing: "0.14em", color: "#f0ede8" }}>14TWENTY</span>
+              </div>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#444", marginBottom: 6 }}>PRODUCTION REVIEW SYSTEM</div>
               <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A FESTIVAL</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -428,7 +432,7 @@ export default function App() {
                 <button
                   key={f.id}
                   className="fest-btn"
-                  onClick={() => { setActiveFestival(f.id); setScreen("areas"); }}
+                  onClick={() => { setActiveFestival(f.id); setScreen("year"); }}
                   style={{
                     width: "100%", padding: "36px 28px",
                     background: "#111113", border: "1px solid #1e1e22",
@@ -460,40 +464,71 @@ export default function App() {
   const festival = FESTIVALS.find(f => f.id === activeFestival);
   const festivalAreas = areas[activeFestival] ?? [];
 
+  // ── SCREEN: Year picker ──
+  if (screen === "year") {
+    return (
+      <>
+        <style>{css}</style>
+        <div className="screen" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, background: "#16161a" }}>
+          <div style={{ width: "100%", maxWidth: 560 }}>
+            <div style={{ textAlign: "center", marginBottom: 52 }}>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 11, letterSpacing: "0.22em", color: "#333", marginBottom: 16 }}>PRODUCTION REVIEW SYSTEM</div>
+              <div style={{ marginBottom: 20, display: "flex", justifyContent: "center" }}>
+                <FestivalLogo festival={festival} active={true} />
+              </div>
+              <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em", color: "#555" }}>SELECT A YEAR</div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {YEARS.slice().reverse().map(y => (
+                <button
+                  key={y}
+                  className="fest-btn"
+                  onClick={() => { setActiveYear(y); setScreen("areas"); }}
+                  style={{
+                    width: "100%", padding: "20px 28px",
+                    background: "#111113", border: "1px solid #1e1e22",
+                    borderRadius: 14, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    position: "relative",
+                  }}
+                >
+                  <span style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 24, color: "#f0ede8", letterSpacing: "0.06em" }}>{y}</span>
+                  <span style={{ color: "#2a2a2e", fontSize: 18 }}>→</span>
+                </button>
+              ))}
+            </div>
+
+            <button className="back-btn" onClick={() => setScreen("festivals")} style={{ marginTop: 28, background: "none", border: "none", cursor: "pointer", color: "#444", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+              ← BACK
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // ── SCREEN: Areas list ──
   if (screen === "areas") {
     return (
       <>
         <style>{css}</style>
-        <div className="screen" style={{ minHeight: "100vh", background: "#0c0c0e" }}>
+        <div className="screen" style={{ minHeight: "100vh", background: "#16161a" }}>
 
           {/* Header */}
-          <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#0c0c0eee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
+          <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#16161aee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
             <div style={{ maxWidth: 700, margin: "0 auto", height: 56, display: "flex", alignItems: "center", gap: 14 }}>
-              <button className="back-btn" onClick={() => setScreen("festivals")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
+              <button className="back-btn" onClick={() => setScreen("year")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
               <FestivalLogo festival={festival} active={true} />
               <div style={{ flex: 1 }} />
-              {/* Year picker */}
-              <div style={{ position: "relative" }}>
-                <button onClick={() => setShowYearPicker(!showYearPicker)} style={{
-                  background: "#161618", border: "1px solid #252528", borderRadius: 8,
-                  color: "#ccc", fontFamily: "'Syne', sans-serif", fontWeight: 700,
-                  fontSize: 12, padding: "6px 12px", cursor: "pointer", letterSpacing: "0.06em",
-                }}>
-                  {activeYear} ▾
-                </button>
-                {showYearPicker && (
-                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "#161618", border: "1px solid #252528", borderRadius: 10, overflow: "hidden", zIndex: 20, minWidth: 80 }}>
-                    {YEARS.map(y => (
-                      <button key={y} onClick={() => { setActiveYear(y); setShowYearPicker(false); }} style={{
-                        display: "block", width: "100%", padding: "10px 16px", background: y === activeYear ? "#222" : "transparent",
-                        border: "none", color: y === activeYear ? "#fff" : "#888", fontFamily: "'Syne', sans-serif",
-                        fontWeight: 700, fontSize: 12, cursor: "pointer", letterSpacing: "0.06em", textAlign: "left",
-                      }}>{y}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {/* Year display — click to go back and change */}
+              <button onClick={() => setScreen("year")} style={{
+                background: "#1e1e22", border: "1px solid #252528", borderRadius: 8,
+                color: "#ccc", fontFamily: "'Syne', sans-serif", fontWeight: 700,
+                fontSize: 12, padding: "6px 12px", cursor: "pointer", letterSpacing: "0.06em",
+              }}>
+                {activeYear} ▾
+              </button>
             </div>
           </div>
 
@@ -576,9 +611,9 @@ export default function App() {
                       autoFocus value={newAreaName} onChange={e => setNewAreaName(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter") addArea(); if (e.key === "Escape") setAddingArea(false); }}
                       placeholder="Area name..."
-                      style={{ flex: 1, background: "#0c0c0e", border: "1px solid #333", borderRadius: 7, color: "#f0ede8", padding: "8px 10px", fontSize: 13 }}
+                      style={{ flex: 1, background: "#16161a", border: "1px solid #333", borderRadius: 7, color: "#f0ede8", padding: "8px 10px", fontSize: 13 }}
                     />
-                    <button onClick={addArea} style={{ background: "#f0ede8", color: "#0c0c0e", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: "'Syne', sans-serif", cursor: "pointer" }}>ADD</button>
+                    <button onClick={addArea} style={{ background: "#f0ede8", color: "#16161a", border: "none", borderRadius: 7, padding: "8px 16px", fontSize: 12, fontWeight: 700, fontFamily: "'Syne', sans-serif", cursor: "pointer" }}>ADD</button>
                     <button onClick={() => setAddingArea(false)} style={{ background: "transparent", color: "#555", border: "1px solid #252528", borderRadius: 7, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>✕</button>
                   </div>
                 ) : (
@@ -605,10 +640,10 @@ export default function App() {
   return (
     <>
       <style>{css}</style>
-      <div className="screen" style={{ minHeight: "100vh", background: "#0c0c0e" }}>
+      <div className="screen" style={{ minHeight: "100vh", background: "#16161a" }}>
 
         {/* Header */}
-        <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#0c0c0eee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 10, background: "#16161aee", backdropFilter: "blur(12px)", borderBottom: "1px solid #1a1a1e", padding: "0 20px" }}>
           <div style={{ maxWidth: 700, margin: "0 auto", height: 56, display: "flex", alignItems: "center", gap: 12 }}>
             <button className="back-btn" onClick={() => setScreen("areas")} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: 20, display: "flex", alignItems: "center", paddingRight: 4 }}>←</button>
             <FestivalLogo festival={festival} active={true} />
@@ -702,11 +737,11 @@ export default function App() {
                     }
                   }}
                   placeholder="Add custom section (e.g. Fencing)..."
-                  style={{ flex: 1, background: "#0c0c0e", border: "1px solid #252528", borderRadius: 8, color: "#f0ede8", padding: "8px 12px", fontSize: 13 }}
+                  style={{ flex: 1, background: "#16161a", border: "1px solid #252528", borderRadius: 8, color: "#f0ede8", padding: "8px 12px", fontSize: 13 }}
                 />
                 <button
                   onClick={() => { if (newCatName.trim()) { setCats(selectedArea, [...cats, newCatName.trim()]); setNewCatName(""); } }}
-                  style={{ background: "#f0ede8", color: "#0c0c0e", border: "none", borderRadius: 8, padding: "8px 16px", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                  style={{ background: "#f0ede8", color: "#16161a", border: "none", borderRadius: 8, padding: "8px 16px", fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
                 >
                   ADD
                 </button>
