@@ -45,7 +45,7 @@ const DEFAULT_AREAS = {
   ],
 };
 
-const CURRENT_YEAR = new Date().getFullYear().toString();
+const CURRENT_YEAR = "2025";
 const YEARS = ["2022", "2023", "2024", "2025", "2026"];
 
 const RATING_OPTIONS = [
