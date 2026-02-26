@@ -1155,7 +1155,14 @@ export default function App() {
                 </div>
               );
             })}
-            {!isSupplier&&<AddRow placeholder="Area name..." onAdd={name=>updateAreas(prev=>[...prev,name])}/>}
+            {!isSupplier&&<AddRow placeholder="Area name..." onAdd={name=>{
+              updateAreas(prev=>[...prev,name]);
+              // Immediately save default cats + available pool for the new area
+              const defaultCats=DEPT_REVIEW_CATS[activeDept]??[];
+              const aId=slugify(name);
+              supabase.from("reviews").upsert({festival:activeFestival,year:activeYear,area_id:`${activeDept}__${aId}`,area_name:name,area_emoji:activeDept,category_id:"__cats__",rating:null,worked_well:"",needs_improvement:"",notes:JSON.stringify(defaultCats),updated_at:new Date().toISOString()},{onConflict:"festival,year,area_id,category_id"});
+              supabase.from("reviews").upsert({festival:activeFestival,year:activeYear,area_id:`${activeDept}__${aId}`,area_name:name,area_emoji:activeDept,category_id:"__available_cats__",rating:null,worked_well:"",needs_improvement:"",notes:JSON.stringify(defaultCats),updated_at:new Date().toISOString()},{onConflict:"festival,year,area_id,category_id"});
+            }}/>}
           </div>
         )}
       </div>
