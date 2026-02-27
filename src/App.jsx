@@ -1629,7 +1629,7 @@ export default function App() {
   // Load config from Supabase when festival opens
   useEffect(() => {
     if (!activeFestival) return;
-    supabase.from("reviews").select("category_id,notes").eq("festival", activeFestival).eq("year", "__config__")
+    supabase.from("reviews").select("category_id,notes,updated_at").eq("festival", activeFestival).eq("year", "__config__").order("updated_at", { ascending: false })
       .then(({ data }) => {
         if (!data) return;
         const yearsRow = data.find(r => r.category_id==="__years__");
@@ -1645,7 +1645,7 @@ export default function App() {
     if (!activeFestival) return;
     const fid = activeFestival;
     function fetchConfig() {
-      supabase.from("reviews").select("category_id,notes").eq("festival", fid).eq("year", "__config__")
+      supabase.from("reviews").select("category_id,notes,updated_at").eq("festival", fid).eq("year", "__config__").order("updated_at", { ascending: false })
         .then(({ data }) => {
           if (!data) return;
           const yearsRow  = data.find(r => r.category_id === "__years__");
@@ -1735,11 +1735,13 @@ export default function App() {
   }, [activeFestival]);
 
   async function saveYearsToDB(fid, years) {
-    await upsertReview(fid, "__config__", "__years__", "__years__", "__config__", "__years__", { notes: JSON.stringify(years) });
+    const { error } = await upsertReview(fid, "__config__", "__years__", "__years__", "__config__", "__years__", { notes: JSON.stringify(years) });
+    if (error) throw error;
   }
   async function saveDeptsToDB(fid, allYearDepts) {
     // allYearDepts is now { [year]: [...depts] } — persisted as a single config record
-    await upsertReview(fid, "__config__", "__depts__", "__depts__", "__config__", "__depts__", { notes: JSON.stringify(allYearDepts) });
+    const { error } = await upsertReview(fid, "__config__", "__depts__", "__depts__", "__config__", "__depts__", { notes: JSON.stringify(allYearDepts) });
+    if (error) throw error;
   }
 
   function getYears(fid) { return eventYears[fid] ?? DEFAULT_YEARS[fid] ?? [CURRENT_YEAR]; }
