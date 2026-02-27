@@ -1652,7 +1652,7 @@ export default function App() {
           const deptsRow  = data.find(r => r.category_id === "__depts__");
           const rosterRow = data.find(r => r.category_id === "__roster__");
           if (yearsRow)  { try { const y=JSON.parse(yearsRow.notes);  if(Array.isArray(y)) setEventYears(p=>({...p,[fid]:y})); } catch(e) {} }
-          if (deptsRow)  { try { const d=JSON.parse(deptsRow.notes);  if(d&&(Array.isArray(d)||typeof d==="object") && Date.now()-lastDeptsWriteRef.current>3000) setEventDepts(p=>({...p,[fid]:d})); } catch(e) {} }
+          if (deptsRow)  { try { const d=JSON.parse(deptsRow.notes);  if(d&&(Array.isArray(d)||typeof d==="object") && Date.now()-lastDeptsWriteRef.current>8000) setEventDepts(p=>({...p,[fid]:d})); } catch(e) {} }
           if (rosterRow) { try { const r=JSON.parse(rosterRow.notes); if(Array.isArray(r)) setRosters(p=>({...p,[fid]:r})); } catch(e) {} }
         });
     }
@@ -1763,7 +1763,7 @@ export default function App() {
   }
   function setDeptsFor(fid, year, fn) {
     let toSave;
-    lastDeptsWriteRef.current = Date.now(); // prevent poll from overwriting before save completes
+    lastDeptsWriteRef.current = Date.now(); // start suppression window immediately
     setEventDepts(p => {
       const current = p[fid];
       let existing;
@@ -1780,7 +1780,18 @@ export default function App() {
       toSave = { ...existing, [year]: next };
       return { ...p, [fid]: toSave };
     });
-    if (toSave) saveDeptsToDB(fid, toSave).catch(() => showSaveError());
+    if (toSave) {
+      const confirmed = toSave;
+      saveDeptsToDB(fid, confirmed)
+        .then(() => {
+          // Save landed in Supabase — reset suppression window from *completion*
+          // and re-apply the saved data to correct any poll-induced revert that
+          // happened while the save was in-flight.
+          lastDeptsWriteRef.current = Date.now();
+          setEventDepts(p => ({...p, [fid]: confirmed}));
+        })
+        .catch(() => showSaveError());
+    }
   }
 
   const festival     = FESTIVALS.find(f => f.id === activeFestival);
