@@ -192,6 +192,13 @@ function getRating(v) { return REVIEW_RATINGS.find(r => r.value === v); }
 function isTrackerYear(y) { return y >= CURRENT_YEAR; }
 function lsGet(key, fb) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fb; } catch(e) { return fb; } }
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
+function parseReviewNotes(raw) {
+  if (!raw) return { tags: [], text: "" };
+  if (raw.startsWith("__notesmeta__")) {
+    try { const d = JSON.parse(raw.slice(13)); return { tags: Array.isArray(d.tags) ? d.tags : [], text: d.text ?? "" }; } catch(e) {}
+  }
+  return { tags: [], text: raw };
+}
 
 function makeTask(label, i = 0) {
   return { id: `task-${Date.now()}-${i}`, label, status: "not-started", owner: "", assignees: [], notes: "", due: "", tags: [] };
@@ -992,7 +999,7 @@ function CommentThread({ entries = [], onSave, userName, placeholder, bgColor, i
 
 // ─── Review section ───────────────────────────────────────────────────────────
 
-function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove, userName, isSupplier, nextYear, areaName, onAISuggestion }) {
+function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove, userName, isSupplier, nextYear, areaName, onAISuggestion, allReviewTags = [], onTagTap }) {
   const status = saveStatuses[saveKey] ?? "idle";
   const [open, setOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState(null);
@@ -1002,11 +1009,13 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
   const wwEntries  = parseComments(data?.worked_well);
   const niEntries  = parseComments(data?.needs_improvement);
   const [no, setNo] = useState(data?.notes ?? "");
+  const [localTags, setLocalTags] = useState(data?.tags ?? []);
 
   useEffect(() => { setNo(data?.notes ?? ""); }, [data]);
+  useEffect(() => { setLocalTags(data?.tags ?? []); }, [data]);
 
-  function buildPatch(newVotes, newWw, newNi, newNo) {
-    return { votes:newVotes, worked_well:newWw, needs_improvement:newNi, notes:newNo };
+  function buildPatch(newVotes, newWw, newNi, newNo, newTags) {
+    return { votes:newVotes, worked_well:newWw, needs_improvement:newNi, notes:newNo, tags:newTags };
   }
 
   const debouncedSave = useDebounce((patch) => onSave(patch), 900);
@@ -1026,10 +1035,11 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
     }, 2500);
   }
 
-  function handleWW(newEntries) { const p=buildPatch(votes,newEntries,niEntries,no); debouncedSave(p); triggerAI(newEntries,niEntries,no); }
-  function handleNI(newEntries) { const p=buildPatch(votes,wwEntries,newEntries,no); debouncedSave(p); triggerAI(wwEntries,newEntries,no); }
-  function handleNo(v)          { setNo(v); const p=buildPatch(votes,wwEntries,niEntries,v); debouncedSave(p); triggerAI(wwEntries,niEntries,v); }
-  function handleVotes(nv)      { onSave(buildPatch(nv,wwEntries,niEntries,no)); }
+  function handleWW(newEntries) { const p=buildPatch(votes,newEntries,niEntries,no,localTags); debouncedSave(p); triggerAI(newEntries,niEntries,no); }
+  function handleNI(newEntries) { const p=buildPatch(votes,wwEntries,newEntries,no,localTags); debouncedSave(p); triggerAI(wwEntries,newEntries,no); }
+  function handleNo(v)          { setNo(v); const p=buildPatch(votes,wwEntries,niEntries,v,localTags); debouncedSave(p); triggerAI(wwEntries,niEntries,v); }
+  function handleVotes(nv)      { onSave(buildPatch(nv,wwEntries,niEntries,no,localTags)); }
+  function handleTags(newTags)  { setLocalTags(newTags); onSave(buildPatch(votes,wwEntries,niEntries,no,newTags)); }
 
   const allVals = Object.values(votes);
   const total   = allVals.length;
@@ -1049,6 +1059,11 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
           {status==="saved"  && <span className="save-pulse" style={{ fontSize:10, color:"#22c55e" }}>SAVED</span>}
           {total>0 && !open && modeRating && <span style={{ fontSize:10, fontWeight:700, color:modeRating.color, letterSpacing:"0.06em" }}>{modeRating.label.toUpperCase()} · {total}v</span>}
           {!total && hasContent && !open && <span style={{ fontSize:10, color:"#444", letterSpacing:"0.06em" }}>{[...new Set([...wwEntries,...niEntries].map(e=>e.author).filter(Boolean))].slice(0,3).join(", ") || "NOTES"}</span>}
+          {localTags.length > 0 && !open && (
+            <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+              {localTags.slice(0,3).map(t => <TagBadge key={t} tag={t} onTap={onTagTap ? () => onTagTap(t) : undefined} />)}
+            </div>
+          )}
           <span style={{ color:"#333", fontSize:12, transform:open?"rotate(180deg)":"none", transition:"transform 0.2s", display:"inline-block", marginLeft:4 }}>▼</span>
         </button>
         {!isSupplier && (
@@ -1075,6 +1090,14 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
             <label style={lbSt}>Notes, suppliers & ideas</label>
             <textarea value={no} onChange={e => handleNo(e.target.value)} placeholder="Contacts, costs, specs..." style={{ ...taSt("#0e0e1a"), minHeight:52 }} />
           </div>
+          {!isSupplier && (
+            <TagInput tags={localTags} onChange={handleTags} allTags={allReviewTags} />
+          )}
+          {isSupplier && localTags.length > 0 && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              {localTags.map(t => <TagBadge key={t} tag={t} />)}
+            </div>
+          )}
           {aiStatus && (
             <div className="ai-pulse" style={{ display:"flex", alignItems:"center", gap:8, fontSize:11, color:aiStatus==="done"?"#a78bfa":"#555", letterSpacing:"0.05em" }}>
               {aiStatus==="thinking" ? `Generating ${nextYear} tracker suggestion…` : `Suggestion added to ${nextYear} tracker ✓`}
@@ -1837,11 +1860,13 @@ export default function App() {
             const aId = row.area_id.replace(`${activeDept}__`,"");
             let votes = {};
             try { if (row.worked_well?.startsWith("__votes__")) votes = JSON.parse(row.worked_well.slice(9)); } catch(e) {}
+            const { tags: rowTags, text: rowNotes } = parseReviewNotes(row.notes);
             map[keys.review(aId, row.category_id)] = {
               votes,
               worked_well:       row.worked_well?.startsWith("__votes__") ? "" : row.worked_well?.startsWith("__comments__") ? JSON.parse(row.worked_well.slice(12)) : (row.worked_well??""),
               needs_improvement: row.needs_improvement?.startsWith("__comments__") ? JSON.parse(row.needs_improvement.slice(12)) : (row.needs_improvement??""),
-              notes: row.notes??"",
+              notes: rowNotes,
+              tags: rowTags,
             };
           });
           setReviewData(map);
@@ -1979,8 +2004,11 @@ export default function App() {
     const encodeField = (val) => Array.isArray(val) ? `__comments__${JSON.stringify(val)}` : (val ?? "");
     const wfField = Object.keys(patch.votes??{}).length > 0 ? `__votes__${JSON.stringify(patch.votes)}` : encodeField(patch.worked_well);
     const niField = encodeField(patch.needs_improvement);
+    const notesField = (patch.tags?.length > 0)
+      ? `__notesmeta__${JSON.stringify({ tags: patch.tags, text: patch.notes ?? "" })}`
+      : (patch.notes ?? "");
     const { error } = await upsertReview(activeFestival, activeYear, activeDept, slugify(aName), aName, slugify(catName), {
-      rating: modeRating, worked_well: wfField, needs_improvement: niField, notes: patch.notes ?? "",
+      rating: modeRating, worked_well: wfField, needs_improvement: niField, notes: notesField,
     });
     setSaveStatuses(s => ({...s, [k]: error ? "error" : "saved"}));
     if (!error) setReviewData(p => ({...p, [k]: patch}));
@@ -2030,6 +2058,11 @@ export default function App() {
       .filter(([k]) => k.startsWith(`${activeFestival}__${activeYear}__${activeDept}__`))
       .flatMap(([, tasks]) => tasks.flatMap(t => t.tags ?? []))
       .filter(Boolean)
+  )];
+
+  // All unique review tags across this dept/year
+  const allReviewTagNames = [...new Set(
+    Object.values(reviewData).flatMap(d => d?.tags ?? []).filter(Boolean)
   )];
 
 
@@ -2437,6 +2470,14 @@ export default function App() {
               )}
               {!isSupplier && tracker && allTagNames.length > 0 && (
                 <button onClick={()=>{ setSelectedTag(null); setScreen("tag-tasks"); }}
+                  style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.06em", whiteSpace:"nowrap" }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                  Tags
+                </button>
+              )}
+              {!isSupplier && !tracker && allReviewTagNames.length > 0 && (
+                <button onClick={()=>{ setSelectedTag(null); setScreen("tag-reviews"); }}
                   style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.06em", whiteSpace:"nowrap" }}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
@@ -2866,6 +2907,112 @@ export default function App() {
   }
 
 
+  // ── SCREEN: Tag reviews ───────────────────────────────────────────────────
+  if (screen === "tag-reviews") {
+    const reviewTags = ["All", ...allReviewTagNames];
+    const tagAreaGroups = festivalAreas
+      .map(areaName => ({
+        areaName,
+        sections: getCats(areaName).filter(cat => {
+          const d = reviewData[keys.review(areaName, cat)];
+          return !selectedTag || (d?.tags ?? []).includes(selectedTag);
+        }).map(cat => ({ cat, data: reviewData[keys.review(areaName, cat)] }))
+      }))
+      .filter(g => g.sections.length > 0);
+
+    const totalSections = tagAreaGroups.reduce((s,g)=>s+g.sections.length,0);
+
+    return (
+      <>
+        <style>{css}</style>
+        <div className="screen" style={{ minHeight:"100vh", background:"#0a0a0a" }}>
+          <PageHeader>
+            <BackBtn onClick={()=>setScreen("areas")}/>
+            <FestivalLogo festival={festival} size={34}/>
+            <div style={{ flex:1 }}/>
+            <ModeBadge tracker={tracker}/>
+          </PageHeader>
+          <div style={{ maxWidth:700, margin:"0 auto", padding:"28px 20px 80px" }}>
+            <div style={{ marginBottom:22 }}>
+              <div style={{ fontWeight:800, fontSize:24, color:"#f0ede8", marginBottom:4 }}>
+                {selectedTag ? (
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                    <TagBadge tag={selectedTag} />
+                    <span>reviews</span>
+                  </span>
+                ) : "All Tags"}
+              </div>
+              <div style={{ fontSize:13, color:"#555" }}>
+                {dept?.name} · {activeYear} · {totalSections} section{totalSections!==1?"s":""}
+              </div>
+            </div>
+
+            {/* Tag filter pills */}
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:22 }}>
+              {reviewTags.map(t => {
+                const isActive = t==="All" ? !selectedTag : selectedTag===t;
+                const c = t==="All" ? "#888" : tagColor(t);
+                return (
+                  <button key={t} onClick={()=>setSelectedTag(t==="All"?null:t)}
+                    style={{ display:"flex", alignItems:"center", gap:5, background:isActive?c+"18":"transparent", border:`1px solid ${isActive?c+"66":"#252528"}`, borderRadius:20, padding:"5px 14px", color:isActive?c:"#555", fontSize:12, fontWeight:700, cursor:"pointer", transition:"all 0.15s", letterSpacing:"0.04em" }}>
+                    {t !== "All" && <span style={{ width:8, height:8, borderRadius:"50%", background:c, flexShrink:0 }}/>}
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+
+            {tagAreaGroups.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"60px 20px", color:"#333", fontSize:13 }}>
+                {selectedTag ? `No sections tagged "${selectedTag}"` : "No tagged sections yet"}
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+                {tagAreaGroups.map(({ areaName, sections }) => {
+                  const { rated, total } = areaReviewScore(areaName);
+                  const rc = areaReviewColor(areaName) ?? "#3a3a3e";
+                  return (
+                    <div key={areaName} style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:12, overflow:"hidden" }}>
+                      <div style={{ padding:"12px 16px", borderBottom:"1px solid #1a1a1e", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
+                        onClick={()=>{ setSelectedArea(areaName); setScreen("area-detail"); }}>
+                        <span style={{ flex:1, fontWeight:700, fontSize:14, color:"#d0ccc8" }}>{areaName}</span>
+                        <span style={{ fontSize:11, color:"#555" }}>{rated}/{total} rated</span>
+                        <div style={{ width:48, height:3, background:"#1e1e22", borderRadius:2, overflow:"hidden" }}>
+                          <div style={{ height:"100%", width:`${total>0?Math.round(rated/total*100):0}%`, background:rc, borderRadius:2 }}/>
+                        </div>
+                        <span style={{ fontSize:11, color:"#333" }}>→</span>
+                      </div>
+                      <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:6 }}>
+                        {sections.map(({ cat, data: sd }) => {
+                          const votes     = sd?.votes ?? {};
+                          const allVals   = Object.values(votes);
+                          const modeVal   = allVals.length>0 ? [1,2,3,4,5].map(v=>({v,c:allVals.filter(x=>x===v).length})).reduce((a,b)=>b.c>a.c?b:a).v : null;
+                          const modeRat   = modeVal ? getRating(modeVal) : null;
+                          const sectionTags = (sd?.tags ?? []).filter(t => t !== selectedTag);
+                          return (
+                            <div key={cat} onClick={()=>{ setSelectedArea(areaName); setScreen("area-detail"); }}
+                              style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 10px", background:"#0d0d10", borderRadius:8, border:"1px solid #1a1a1e", cursor:"pointer" }}
+                              onMouseEnter={e=>e.currentTarget.style.borderColor="#2a2a30"}
+                              onMouseLeave={e=>e.currentTarget.style.borderColor="#1a1a1e"}>
+                              <div style={{ width:7, height:7, borderRadius:"50%", flexShrink:0, background:modeRat?modeRat.color:"#2a2a2e", boxShadow:modeRat?`0 0 5px ${modeRat.color}66`:"none" }}/>
+                              <span style={{ flex:1, fontSize:13, color:"#d0ccc8", lineHeight:1.4 }}>{cat}</span>
+                              {modeRat && <span style={{ fontSize:10, fontWeight:700, color:modeRat.color, letterSpacing:"0.06em", flexShrink:0 }}>{modeRat.label.toUpperCase()} · {allVals.length}v</span>}
+                              {sectionTags.map(t=><TagBadge key={t} tag={t} onTap={()=>setSelectedTag(t)}/>)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // ── SCREEN: Area detail ───────────────────────────────────────────────────
   const cats      = getCats(selectedArea);
   const areaId    = slugify(selectedArea);
@@ -3076,6 +3223,8 @@ export default function App() {
                           onSave={patch=>handleSave(selectedArea,cat,patch)}
                           onRemove={()=>setCats(selectedArea,cats.filter(c=>c!==cat))}
                           onAISuggestion={suggestion=>addAISuggestion(selectedArea,suggestion)}
+                          allReviewTags={allReviewTagNames}
+                          onTagTap={tag=>{ setSelectedTag(tag); setScreen("tag-reviews"); }}
                         />
                       );
                     }}
