@@ -500,21 +500,36 @@ function DragList({ items, onReorder, renderItem, gap = 5 }) {
 
 // ─── Assignee components ──────────────────────────────────────────────────────
 
-// Resolve colour for a name from the roster; fall back to a hue-derived colour
-// if the person isn't in the roster (e.g. legacy data or manually typed names).
-function resolveColor(name, roster = []) {
-  const member = roster.find(m => m.name === name);
+// Resolve colour for a name from a roster array.
+// Exact match first, then first-name match, then hash fallback.
+function resolveColor(name, rosterArr = []) {
+  if (!name) return { hex:"#888", bg:"#88888818", border:"#88888833" };
+  const lower = name.toLowerCase().trim();
+  // Exact
+  let member = rosterArr.find(m => m.name.toLowerCase() === lower);
+  if (!member) {
+    // First-name match
+    const firstName = lower.split(/\s+/)[0];
+    member = rosterArr.find(m => m.name.toLowerCase().split(/\s+/)[0] === firstName);
+  }
+  if (!member) {
+    // Last-name match
+    const parts = lower.split(/\s+/);
+    if (parts.length > 1) {
+      const lastName = parts[parts.length - 1];
+      member = rosterArr.find(m => {
+        const mp = m.name.toLowerCase().split(/\s+/);
+        return mp[mp.length - 1] === lastName;
+      });
+    }
+  }
   if (member) {
     const tc = TEAM_COLORS.find(c => c.id === member.colorId);
     if (tc) return { hex: tc.hex, bg: tc.bg, border: tc.border };
   }
-  // Fallback: derive from name hash (legacy / ad-hoc)
+  // Fallback: hue derived from name
   const hue = name.split("").reduce((a,c)=>a+c.charCodeAt(0),0) % 360;
-  return {
-    hex:    `hsl(${hue},55%,65%)`,
-    bg:     `hsl(${hue},55%,12%)`,
-    border: `hsl(${hue},55%,25%)`,
-  };
+  return { hex:`hsl(${hue},55%,65%)`, bg:`hsl(${hue},55%,12%)`, border:`hsl(${hue},55%,25%)` };
 }
 
 function AssigneeTag({ name, onRemove, onTap, roster = [] }) {
@@ -1192,6 +1207,84 @@ function SAGDashboard({ festival, years, getDepts, getAreaTasks, allAreas, onClo
 }
 
 
+// ─── UploadedSiteMap ─────────────────────────────────────────────────────────
+// Renders a user-uploaded SVG and overlays coloured status dots on area names
+// found as text content within the SVG. Works for any festival.
+
+function UploadedSiteMap({ svgText, areas, tracker, getAreaColor, onAreaTap }) {
+  const containerRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!containerRef.current || !svgText) return;
+    const container = containerRef.current;
+    container.innerHTML = svgText;
+    const svg = container.querySelector("svg");
+    if (!svg) return;
+
+    // Make SVG responsive
+    svg.removeAttribute("width");
+    svg.removeAttribute("height");
+    svg.style.width = "100%";
+    svg.style.height = "auto";
+    svg.style.display = "block";
+
+    // Walk all text elements looking for area name matches
+    const textEls = svg.querySelectorAll("text, tspan");
+    textEls.forEach(el => {
+      const text = el.textContent?.trim() ?? "";
+      const matched = areas.find(a => a.toLowerCase() === text.toLowerCase() ||
+        text.toLowerCase().includes(a.toLowerCase()) ||
+        a.toLowerCase().includes(text.toLowerCase()));
+      if (!matched) return;
+
+      const color = getAreaColor(matched);
+      if (!color) return;
+
+      // Style the text element
+      el.style.cursor = "pointer";
+      el.style.fill = color;
+      el.style.fontWeight = "bold";
+      el.addEventListener("click", () => onAreaTap(matched));
+
+      // Try to add a small glow circle near the text
+      try {
+        const bbox = el.getBBox();
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", bbox.x + bbox.width + 6);
+        circle.setAttribute("cy", bbox.y + bbox.height / 2);
+        circle.setAttribute("r", "5");
+        circle.setAttribute("fill", color);
+        circle.setAttribute("opacity", "0.85");
+        circle.style.cursor = "pointer";
+        circle.addEventListener("click", () => onAreaTap(matched));
+        el.parentNode.insertBefore(circle, el.nextSibling);
+      } catch(e) {}
+    });
+
+    setReady(true);
+  }, [svgText, areas, tracker]);
+
+  return (
+    <div style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:14, overflow:"hidden", padding:8 }}>
+      {!ready && <div style={{ textAlign:"center", padding:40, color:"#444", fontSize:12 }}>Rendering map…</div>}
+      <div ref={containerRef} style={{ display: ready ? "block" : "none" }} />
+      <div style={{ padding:"8px 12px 4px", display:"flex", flexWrap:"wrap", gap:8 }}>
+        {areas.filter(a => getAreaColor(a)).map(a => {
+          const color = getAreaColor(a);
+          return (
+            <button key={a} onClick={() => onAreaTap(a)}
+              style={{ background:"transparent", border:"none", display:"flex", alignItems:"center", gap:5, cursor:"pointer", padding:"2px 4px" }}>
+              <span style={{ width:7, height:7, borderRadius:"50%", background:color, flexShrink:0 }} />
+              <span style={{ fontSize:10, color, fontWeight:600 }}>{a}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1214,17 +1307,29 @@ export default function App() {
   const [identityCompany, setIdentityCompany] = useState(storedUser?.company ?? "");
 
   function saveIdentity() {
-    const name = identityName.trim() || "Team";
+    const name    = identityName.trim() || "Team";
     const company = identityCompany.trim();
     const u = { name, company };
     setUser(u);
     localStorage.setItem("14twenty_user", JSON.stringify(u));
     setShowIdentity(false);
+    // Auto-add to the current festival's roster if we're inside one
+    if (activeFestival && name !== "Team") {
+      // Small delay so roster state is ready
+      setTimeout(() => ensureUserInRoster(name, activeFestival), 100);
+    }
   }
 
-  const userName = user
-    ? `${user.name}${user.company ? ` · ${user.company}` : ""}`
+  // userName used for task stamps — just first+last name (no company), so
+  // it matches cleanly against roster names and other users' assignments.
+  const userName = user?.name
+    ? user.name
     : (isSupplier ? "Supplier" : "Team");
+
+  // Display name shown in header (includes company)
+  const displayName = user
+    ? `${user.name}${user.company ? ` · ${user.company}` : ""}`
+    : (isSupplier ? "Supplier" : "Set identity");
 
   // ── Password ──────────────────────────────────────────────────────────────
   const [unlockedFestivals, setUnlockedFestivals] = useState({});
@@ -1239,6 +1344,10 @@ export default function App() {
       setUnlockedFestivals(p => ({...p, [fid]:true}));
       setPasswordTarget(null); setPasswordInput(""); setPasswordError(false);
       setActiveFestival(fid); setScreen("year");
+      // Auto-add user to this festival's roster after a short delay (roster loads async)
+      if (userName && userName !== "Team" && userName !== "Supplier") {
+        setTimeout(() => ensureUserInRoster(userName, fid), 800);
+      }
     } else {
       setPasswordError(true); setPasswordInput("");
     }
@@ -1315,53 +1424,76 @@ export default function App() {
   const [newCatName, setNewCatName]           = useState("");
 
   // ── Team roster ───────────────────────────────────────────────────────────
-  // roster: [{ id, name, role, colorId }] — per festival + year
-  const [rosters, setRosters] = useState({});  // keyed by `${festivalId}__${year}`
+  // roster: [{ id, name, role, colorId }] — per festival, shared across years
+  // Each festival (gottwood / peep / soysambu) has its own separate roster.
+  const [rosters, setRosters] = useState({});  // keyed by festivalId
 
-  const rosterKey = activeFestival && activeYear ? `${activeFestival}__${activeYear}` : null;
-  const roster = (rosterKey ? rosters[rosterKey] : null) ?? [];
+  const roster = (activeFestival ? rosters[activeFestival] : null) ?? [];
 
-  // Load roster from Supabase when festival + year are selected
+  // Load roster from Supabase whenever a festival is opened
   useEffect(() => {
-    if (!activeFestival || !activeYear) return;
-    const rk = `${activeFestival}__${activeYear}`;
-    if (rosters[rk] !== undefined) return; // already loaded
+    if (!activeFestival) return;
+    if (rosters[activeFestival] !== undefined) return; // already loaded
     supabase.from("reviews")
       .select("notes")
       .eq("festival", activeFestival)
-      .eq("year", activeYear)
+      .eq("year", "__config__")
       .eq("category_id", "__roster__")
       .single()
       .then(({ data }) => {
         try {
           const r = data?.notes ? JSON.parse(data.notes) : [];
-          setRosters(p => ({ ...p, [rk]: Array.isArray(r) ? r : [] }));
-        } catch(e) { setRosters(p => ({ ...p, [rk]: [] })); }
+          setRosters(p => ({ ...p, [activeFestival]: Array.isArray(r) ? r : [] }));
+        } catch(e) { setRosters(p => ({ ...p, [activeFestival]: [] })); }
       });
-  }, [activeFestival, activeYear]);
+  }, [activeFestival]);
 
-  async function saveRosterToDB(fid, yr, newRoster) {
-    await upsertReview(fid, yr, "__roster__", "__roster__", "__roster__", "__roster__", { notes: JSON.stringify(newRoster) });
+  async function saveRosterToDB(fid, newRoster) {
+    await upsertReview(fid, "__config__", "__roster__", "__roster__", "__config__", "__roster__", { notes: JSON.stringify(newRoster) });
   }
 
-  function updateRoster(fn) {
-    if (!rosterKey) return;
+  function updateRoster(fn, fid = activeFestival) {
+    if (!fid) return;
     setRosters(p => {
-      const current = p[rosterKey] ?? [];
+      const current = p[fid] ?? [];
       const next = typeof fn === "function" ? fn(current) : fn;
-      saveRosterToDB(activeFestival, activeYear, next);
-      return { ...p, [rosterKey]: next };
+      saveRosterToDB(fid, next);
+      return { ...p, [fid]: next };
     });
   }
 
-  function addRosterMember(name, role = "") {
+  // Find the best-matching roster member for a given name.
+  // Exact match first, then first-name match (e.g. "Angus" matches "Angus James").
+  function findRosterMember(name, fid = activeFestival) {
+    const r = fid ? (rosters[fid] ?? []) : [];
+    if (!name) return null;
+    const lower = name.toLowerCase().trim();
+    // 1. Exact match
+    const exact = r.find(m => m.name.toLowerCase() === lower);
+    if (exact) return exact;
+    // 2. First-name match: user typed "Angus", roster has "Angus James"
+    const firstName = lower.split(/\s+/)[0];
+    const firstMatch = r.find(m => m.name.toLowerCase().split(/\s+/)[0] === firstName);
+    if (firstMatch) return firstMatch;
+    // 3. Last-name match: user typed "James", roster has "Angus James"
+    const lastName = lower.split(/\s+/).slice(-1)[0];
+    if (lastName !== firstName) {
+      const lastMatch = r.find(m => m.name.toLowerCase().split(/\s+/).slice(-1)[0] === lastName);
+      if (lastMatch) return lastMatch;
+    }
+    return null;
+  }
+
+  function addRosterMember(name, role = "", fid = activeFestival) {
     const trimmed = name.trim();
-    if (!trimmed) return;
-    const current = rosterKey ? (rosters[rosterKey] ?? []) : [];
-    if (current.some(m => m.name === trimmed)) return;
+    if (!trimmed || !fid) return;
+    const current = rosters[fid] ?? [];
+    // Don't add exact duplicates
+    if (current.some(m => m.name.toLowerCase() === trimmed.toLowerCase())) return;
     const color = pickNextColor(current);
     const member = { id: `m-${Date.now()}`, name: trimmed, role: role.trim(), colorId: color.id };
-    updateRoster(prev => [...prev, member]);
+    updateRoster(prev => [...prev, member], fid);
+    return member;
   }
 
   function removeRosterMember(id) {
@@ -1372,12 +1504,89 @@ export default function App() {
     updateRoster(prev => prev.map(m => m.id === id ? { ...m, role } : m));
   }
 
+  // When a user sets their identity, auto-add them to the current festival's roster.
+  // Works immediately if roster is loaded, or queues until it loads.
+  function ensureUserInRoster(name, fid = activeFestival) {
+    if (!fid || !name || name === "Team" || name === "Supplier") return;
+    // If roster not yet loaded, flag it and wait for load effect
+    if (rosters[fid] === undefined) {
+      pendingRosterAddRef.current = { name, fid };
+      return;
+    }
+    const existing = findRosterMember(name, fid);
+    if (existing) return; // already on roster (exact or fuzzy match)
+    const current = rosters[fid] ?? [];
+    const color = pickNextColor(current);
+    const member = { id: `m-${Date.now()}`, name, role: "", colorId: color.id };
+    updateRoster(prev => [...prev, member], fid);
+  }
+
+  // Ref to hold a pending roster add if the roster wasn't loaded yet
+  const pendingRosterAddRef = useRef(null);
+
+  // After roster loads, process any pending add
+  useEffect(() => {
+    const pending = pendingRosterAddRef.current;
+    if (!pending) return;
+    const { name, fid } = pending;
+    if (rosters[fid] === undefined) return; // still not loaded
+    pendingRosterAddRef.current = null;
+    ensureUserInRoster(name, fid);
+  }, [rosters]);
+
+  // Auto-ensure user is in roster whenever they enter a festival that's loaded
+  useEffect(() => {
+    if (!activeFestival || !userName || userName === "Team" || userName === "Supplier") return;
+    if (rosters[activeFestival] === undefined) return; // wait for load
+    ensureUserInRoster(userName, activeFestival);
+  }, [activeFestival, rosters[activeFestival]]);
+
+  // Resolve colour for display: use roster match (including fuzzy), fallback to hash
+  function resolveColorForFestival(name, fid = activeFestival) {
+    const r = fid ? (rosters[fid] ?? []) : roster;
+    const member = findRosterMember(name, fid) ?? r.find(m => m.name === name);
+    if (member) {
+      const tc = TEAM_COLORS.find(c => c.id === member.colorId);
+      if (tc) return { hex: tc.hex, bg: tc.bg, border: tc.border };
+    }
+    const hue = name.split("").reduce((a,c) => a + c.charCodeAt(0), 0) % 360;
+    return { hex: `hsl(${hue},55%,65%)`, bg: `hsl(${hue},55%,12%)`, border: `hsl(${hue},55%,25%)` };
+  }
+
   // ── View toggles ──────────────────────────────────────────────────────────
   const [mapView, setMapView]   = useState(false);
   const [calView, setCalView]   = useState(false);
   const [sagView, setSagView]   = useState(false);
 
-  // ── NEW: Bulk select & task search ────────────────────────────────────────
+  // ── SVG maps — one per festival, persisted to Supabase ───────────────────
+  const [festivalMaps, setFestivalMaps] = useState({});
+  const mapUploadRef = useRef(null);
+
+  useEffect(() => {
+    if (!activeFestival || festivalMaps[activeFestival] !== undefined) return;
+    supabase.from("reviews")
+      .select("notes")
+      .eq("festival", activeFestival)
+      .eq("year", "__config__")
+      .eq("category_id", "__svgmap__")
+      .single()
+      .then(({ data }) => {
+        setFestivalMaps(p => ({ ...p, [activeFestival]: data?.notes ?? null }));
+      });
+  }, [activeFestival]);
+
+  async function saveFestivalMap(fid, svgText) {
+    await upsertReview(fid, "__config__", "__svgmap__", "__svgmap__", "__config__", "__svgmap__", { notes: svgText });
+  }
+
+  // ── Area-level search (areas list screen) ─────────────────────────────────
+  const [areaSearch, setAreaSearch] = useState("");
+  const filteredFestivalAreas = areaSearch.trim()
+    ? festivalAreas.filter(a => a.toLowerCase().includes(areaSearch.toLowerCase()))
+    : festivalAreas;
+
+  // ── Task-level search (area-detail screen) ────────────────────────────────
+  // ── Bulk select & task search ─────────────────────────────────────────────
   const [selectedTasks, setSelectedTasks]     = useState(new Set());
   const [taskSearch, setTaskSearch]           = useState("");
   const [bulkStatus, setBulkStatus]           = useState("done");
@@ -1719,7 +1928,7 @@ export default function App() {
             <img src={FOURTEEN_TWENTY_LOGO} style={{ height:28, objectFit:"contain" }} alt="14twenty" />
             <div style={{ flex:1 }} />
             <button onClick={()=>setShowIdentity(true)} style={{ background:"none", border:"1px solid #1e1e22", borderRadius:20, color:"#555", fontSize:11, fontWeight:600, padding:"4px 14px", cursor:"pointer", letterSpacing:"0.05em", maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-              {user ? `${user.name}${user.company?` · ${user.company}`:""}` : "Set identity"} ▾
+              {displayName} ▾
             </button>
           </div>
         </div>
@@ -2043,7 +2252,7 @@ export default function App() {
         </PageHeader>
 
         <div style={{ maxWidth:700, margin:"0 auto", padding:"28px 20px 60px" }}>
-          <div style={{ marginBottom:24, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
+          <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
             <div>
               <div style={{ fontWeight:800, fontSize:26, color:"#f0ede8", marginBottom:4 }}>{dept?.name}</div>
               <div style={{ fontSize:13, color:"#555" }}>{festivalAreas.length} areas · {activeYear} · {tracker?"Progress Tracker":"Review"}{isSupplier&&supplierToken?.filter?` · ${supplierToken.filter}`:""}</div>
@@ -2063,12 +2272,37 @@ export default function App() {
                   {calView?"☰ LIST":"📅 CAL"}
                 </button>
               )}
-              {!isSupplier && festival?.id==="gottwood" && !calView && (
-                <button onClick={()=>setMapView(v=>!v)}
+              {/* MAP button — available for all festivals, shows upload prompt if no map yet */}
+              {!isSupplier && !calView && (
+                <button onClick={()=>{
+                  const hasMap = festivalMaps[activeFestival];
+                  if (hasMap) {
+                    setMapView(v=>!v);
+                  } else {
+                    // Trigger SVG upload
+                    mapUploadRef.current?.click();
+                  }
+                }}
                   style={{ background:mapView?"#f0ede811":"transparent", border:`1px solid ${mapView?"#888":"#252528"}`, borderRadius:8, color:mapView?"#f0ede8":"#555", fontSize:11, fontWeight:700, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.08em", whiteSpace:"nowrap", transition:"all 0.15s" }}>
-                  {mapView?"☰ LIST":"▦ MAP"}
+                  {mapView ? "☰ LIST" : festivalMaps[activeFestival] ? "▦ MAP" : "▦ MAP +"}
                 </button>
               )}
+              {/* Hidden SVG file input */}
+              <input ref={mapUploadRef} type="file" accept=".svg,image/svg+xml" style={{ display:"none" }}
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    const svgText = ev.target.result;
+                    setFestivalMaps(p => ({ ...p, [activeFestival]: svgText }));
+                    saveFestivalMap(activeFestival, svgText);
+                    setMapView(true);
+                  };
+                  reader.readAsText(file);
+                  e.target.value = ""; // reset so same file can be re-uploaded
+                }}
+              />
               {!isSupplier && !mapView && !calView && (
                 <button onClick={()=>updateAreas(prev=>[...prev].sort((a,b)=>a.localeCompare(b)))}
                   style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.06em", whiteSpace:"nowrap" }}
@@ -2079,6 +2313,16 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/* Area search bar */}
+          {tracker && !calView && !mapView && (
+            <div style={{ position:"relative", marginBottom:14 }}>
+              <span style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", fontSize:13, color:"#444", pointerEvents:"none" }}>🔍</span>
+              <input value={areaSearch} onChange={e=>setAreaSearch(e.target.value)} placeholder={`Search ${festivalAreas.length} areas…`}
+                style={{ width:"100%", background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#f0ede8", padding:"9px 10px 9px 32px", fontSize:13, boxSizing:"border-box" }} />
+              {areaSearch && <button onClick={()=>setAreaSearch("")} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:14, padding:0 }}>✕</button>}
+            </div>
+          )}
 
           {/* Tracker summary bar */}
           {tracker && !isSupplier && (() => {
@@ -2119,7 +2363,29 @@ export default function App() {
             </div>
           )}
 
-          {mapView && festival?.id==="gottwood" && (
+          {mapView && festivalMaps[activeFestival] && (
+            <div style={{ marginBottom:16 }}>
+              <UploadedSiteMap
+                svgText={festivalMaps[activeFestival]}
+                areas={festivalAreas}
+                tracker={tracker}
+                getAreaColor={areaName => tracker ? areaRAGColor(areaName) : areaReviewColor(areaName)}
+                onAreaTap={areaName => {
+                  if (festivalAreas.includes(areaName)) { setSelectedArea(areaName); setScreen("area-detail"); setEditingCats(false); }
+                }}
+              />
+              <div style={{ display:"flex", justifyContent:"center", marginTop:8 }}>
+                <button onClick={()=>{ mapUploadRef.current?.click(); }}
+                  style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"5px 12px", cursor:"pointer" }}
+                  onMouseEnter={e=>{e.currentTarget.style.color="#f0ede8";e.currentTarget.style.borderColor="#444";}}
+                  onMouseLeave={e=>{e.currentTarget.style.color="#555";e.currentTarget.style.borderColor="#252528";}}>
+                  ↑ Replace SVG map
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mapView && festival?.id==="gottwood" && !festivalMaps[activeFestival] && (
             <div style={{ marginBottom:16 }}>
               <SiteMap festival={festival} areas={festivalAreas} tracker={tracker}
                 getAreaColor={areaName => tracker ? areaRAGColor(areaName) : areaReviewColor(areaName)}
@@ -2129,11 +2395,14 @@ export default function App() {
             </div>
           )}
 
-          {!calView && (loading ? (
+          {!calView && !mapView && (loading ? (
             <div style={{ textAlign:"center", padding:60, color:"#444", fontSize:12, letterSpacing:"0.1em" }}>LOADING…</div>
           ) : (
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              {festivalAreas.map(areaName => {
+              {areaSearch && filteredFestivalAreas.length === 0 && (
+                <div style={{ textAlign:"center", padding:"30px 0", color:"#444", fontSize:13 }}>No areas match "{areaSearch}"</div>
+              )}
+              {filteredFestivalAreas.map(areaName => {
                 const color      = tracker ? areaRAGColor(areaName) : areaReviewColor(areaName);
                 const hasActivity = tracker
                   ? (()=>{ const s=areaTaskStats(areaName); return s.done>0||s.inProgress>0||s.blocked>0; })()
@@ -2311,9 +2580,7 @@ export default function App() {
   const isSavingTasks = taskSaving[keys.dept(activeDept, areaId)];
 
   // NEW: Task search filter
-  const filteredTasks = taskSearch.trim()
-    ? areaTasks.filter(t => t.label.toLowerCase().includes(taskSearch.toLowerCase()) || t.notes?.toLowerCase().includes(taskSearch.toLowerCase()))
-    : areaTasks;
+  const filteredTasks = areaTasks; // search moved to area list level
 
   return (
     <>
@@ -2382,31 +2649,20 @@ export default function App() {
                 </div>
               )}
 
-              {/* NEW: Search + bulk controls toolbar */}
-              <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-                {/* Search */}
-                <div style={{ flex:1, position:"relative" }}>
-                  <span style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", fontSize:13, color:"#444", pointerEvents:"none" }}>🔍</span>
-                  <input value={taskSearch} onChange={e=>setTaskSearch(e.target.value)} placeholder="Search tasks..." style={{ width:"100%", background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#f0ede8", padding:"8px 10px 8px 32px", fontSize:13 }} />
-                  {taskSearch && <button onClick={()=>setTaskSearch("")} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:14, padding:0 }}>✕</button>}
-                </div>
-
-                {/* NEW: Bulk select button */}
-                {!isSupplier && (
-                  <button onClick={()=>{ if(selectedTasks.size>0) clearSelection(); else setSelectedTasks(new Set(filteredTasks.map(t=>t.id))); }}
+              {/* Bulk controls toolbar */}
+              {!isSupplier && (
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <button onClick={()=>{ if(selectedTasks.size>0) clearSelection(); else setSelectedTasks(new Set(areaTasks.map(t=>t.id))); }}
                     style={{ background:selectedTasks.size>0?"#a78bfa22":"transparent", border:`1px solid ${selectedTasks.size>0?"#a78bfa":"#252528"}`, borderRadius:8, color:selectedTasks.size>0?"#a78bfa":"#555", fontSize:11, fontWeight:700, padding:"6px 14px", cursor:"pointer", whiteSpace:"nowrap", transition:"all 0.15s" }}>
                     {selectedTasks.size>0 ? `✓ ${selectedTasks.size} selected` : "Select all"}
                   </button>
-                )}
-
-                {/* A→Z sort */}
-                {!isSupplier && (
                   <button onClick={()=>setAreaTasks(selectedArea,[...areaTasks].sort((a,b)=>a.label.localeCompare(b.label)))}
                     style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"6px 12px", cursor:"pointer", letterSpacing:"0.05em" }}
                     onMouseEnter={e=>{e.currentTarget.style.color="#f0ede8";e.currentTarget.style.borderColor="#444";}}
                     onMouseLeave={e=>{e.currentTarget.style.color="#555";e.currentTarget.style.borderColor="#252528";}}>A → Z</button>
-                )}
-              </div>
+                  <div style={{ flex:1 }} />
+                </div>
+              )}
 
               {/* NEW: Bulk action bar */}
               {selectedTasks.size > 0 && !isSupplier && (
@@ -2426,15 +2682,10 @@ export default function App() {
                 </div>
               )}
 
-              {filteredTasks.length === 0 && taskSearch && (
-                <div style={{ textAlign:"center", padding:"30px 0", color:"#444", fontSize:13 }}>No tasks match "{taskSearch}"</div>
-              )}
-
               <DragList
                 items={filteredTasks}
                 onReorder={newTasks => {
                   // Merge reordered filtered tasks back into full list preserving non-filtered positions
-                  if (taskSearch.trim()) return; // no drag while searching
                   setAreaTasks(selectedArea, newTasks);
                 }}
                 gap={5}
