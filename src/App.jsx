@@ -1581,6 +1581,10 @@ export default function App() {
 
   // ── Area-level search (areas list screen) ─────────────────────────────────
   const [areaSearch, setAreaSearch] = useState("");
+
+  // ── Team screen form state (must be at App level — Rules of Hooks) ────────
+  const [teamNewName, setTeamNewName] = useState("");
+  const [teamNewRole, setTeamNewRole] = useState("");
   const filteredFestivalAreas = areaSearch.trim()
     ? festivalAreas.filter(a => a.toLowerCase().includes(areaSearch.toLowerCase()))
     : festivalAreas;
@@ -2057,12 +2061,7 @@ export default function App() {
 
   // ── SCREEN: Team roster ───────────────────────────────────────────────────
   if (screen === "team") {
-    const [newName, setNewName] = useState("");
-    const [newRole, setNewRole] = useState("");
-
-    // Team requires a festival + year to be active
     const teamFestival = festival ?? FESTIVALS[0];
-    const teamYear     = activeYear ?? CURRENT_YEAR;
 
     return (
       <>
@@ -2091,27 +2090,27 @@ export default function App() {
               <div style={{ fontWeight:700, fontSize:11, color:"#555", letterSpacing:"0.1em", marginBottom:14 }}>ADD TEAM MEMBER</div>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                 <input
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  onKeyDown={e => { if (e.key==="Enter" && newName.trim()) { addRosterMember(newName, newRole); setNewName(""); setNewRole(""); } }}
+                  value={teamNewName}
+                  onChange={e => setTeamNewName(e.target.value)}
+                  onKeyDown={e => { if (e.key==="Enter" && teamNewName.trim()) { addRosterMember(teamNewName, teamNewRole); setTeamNewName(""); setTeamNewRole(""); } }}
                   placeholder="Full name…"
                   style={{ flex:2, minWidth:140, background:"#0a0a0a", border:"1px solid #252528", borderRadius:8, color:"#f0ede8", padding:"10px 12px", fontSize:13 }}
                 />
                 <input
-                  value={newRole}
-                  onChange={e => setNewRole(e.target.value)}
-                  onKeyDown={e => { if (e.key==="Enter" && newName.trim()) { addRosterMember(newName, newRole); setNewName(""); setNewRole(""); } }}
+                  value={teamNewRole}
+                  onChange={e => setTeamNewRole(e.target.value)}
+                  onKeyDown={e => { if (e.key==="Enter" && teamNewName.trim()) { addRosterMember(teamNewName, teamNewRole); setTeamNewName(""); setTeamNewRole(""); } }}
                   placeholder="Role (optional)…"
                   style={{ flex:2, minWidth:120, background:"#0a0a0a", border:"1px solid #252528", borderRadius:8, color:"#f0ede8", padding:"10px 12px", fontSize:13 }}
                 />
                 <button
-                  onClick={() => { if (newName.trim()) { addRosterMember(newName, newRole); setNewName(""); setNewRole(""); } }}
+                  onClick={() => { if (teamNewName.trim()) { addRosterMember(teamNewName, teamNewRole); setTeamNewName(""); setTeamNewRole(""); } }}
                   style={{ background:"#f0ede8", color:"#0a0a0a", border:"none", borderRadius:8, padding:"10px 20px", fontWeight:700, fontSize:13, cursor:"pointer", whiteSpace:"nowrap" }}>
                   Add
                 </button>
               </div>
               {/* Preview of colour that will be assigned */}
-              {newName.trim() && (() => {
+              {teamNewName.trim() && (() => {
                 const next = pickNextColor(roster);
                 return (
                   <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:8, fontSize:11, color:"#555" }}>
