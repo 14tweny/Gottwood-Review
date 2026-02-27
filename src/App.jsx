@@ -133,6 +133,13 @@ const TASK_STATUSES = [
   { id: "blocked",     label: "Blocked",     color: "#ef4444" },
 ];
 
+const TAG_PALETTE = ["#a78bfa","#22d3ee","#fb7185","#fbbf24","#34d399","#60a5fa","#fb923c","#f472b6","#2dd4bf","#a3e635"];
+function tagColor(tag) {
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) & 0x7fffffff;
+  return TAG_PALETTE[h % TAG_PALETTE.length];
+}
+
 // Smart task sort: in-progress → top, done → bottom, manual order preserved within groups
 function smartSortTasks(tasks) {
   const rank = { "in-progress": 0, "not-started": 1, "blocked": 1, "done": 2 };
@@ -194,7 +201,7 @@ function lsGet(key, fb) { try { const v = localStorage.getItem(key); return v ? 
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
 
 function makeTask(label, i = 0) {
-  return { id: `task-${Date.now()}-${i}`, label, status: "not-started", owner: "", assignees: [], notes: "", due: "" };
+  return { id: `task-${Date.now()}-${i}`, label, status: "not-started", owner: "", assignees: [], notes: "", due: "", tags: [] };
 }
 
 function getDefaultTasks(dept, areaName, festivalId) {
@@ -670,6 +677,84 @@ function AssigneeInput({ assignees = [], onChange, roster = [] }) {
   );
 }
 
+// ─── Tag components ───────────────────────────────────────────────────────────
+
+function TagBadge({ tag, onRemove, onTap }) {
+  const c = tagColor(tag);
+  return (
+    <span onClick={e => { e.stopPropagation(); if (onTap) onTap(); }}
+      style={{ display:"inline-flex", alignItems:"center", gap:3, background:c+"18", border:`1px solid ${c}44`, borderRadius:20, padding:"2px 8px", fontSize:10, fontWeight:700, color:c, letterSpacing:"0.04em", flexShrink:0, cursor:onTap?"pointer":"default", transition:"filter 0.15s" }}
+      onMouseEnter={e => { if (onTap) e.currentTarget.style.filter="brightness(1.3)"; }}
+      onMouseLeave={e => { e.currentTarget.style.filter="none"; }}>
+      {tag}
+      {onRemove && <span onClick={e => { e.stopPropagation(); onRemove(); }} style={{ cursor:"pointer", opacity:0.6, fontSize:12, lineHeight:1, marginLeft:2 }}>×</span>}
+    </span>
+  );
+}
+
+function TagInput({ tags = [], onChange, allTags = [] }) {
+  const [input, setInput] = useState("");
+  const [open, setOpen]   = useState(false);
+  const ref               = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const suggestions = allTags.filter(t => !tags.includes(t) && t.toLowerCase().includes(input.toLowerCase()));
+
+  function add(tag) {
+    const t = tag.trim().toLowerCase();
+    if (!t || tags.includes(t)) return;
+    onChange([...tags, t]);
+    setInput(""); setOpen(false);
+  }
+
+  function remove(tag) { onChange(tags.filter(t => t !== tag)); }
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <label style={{ fontSize:10, fontWeight:600, color:"#555", letterSpacing:"0.1em", textTransform:"uppercase" }}>Tags</label>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:5, background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, padding:"6px 8px", minHeight:34, cursor:"text" }}
+        onClick={() => { setOpen(true); ref.current?.querySelector("input")?.focus(); }}>
+        {tags.map(t => <TagBadge key={t} tag={t} onRemove={() => remove(t)} />)}
+        <input value={input} onChange={e => { setInput(e.target.value); setOpen(true); }}
+          onKeyDown={e => {
+            if ((e.key === "Enter" || e.key === ",") && input.trim()) { e.preventDefault(); add(input); }
+            if (e.key === "Backspace" && !input && tags.length) remove(tags[tags.length - 1]);
+          }}
+          onFocus={() => setOpen(true)} placeholder={tags.length ? "" : "Add tag…"}
+          style={{ flex:1, minWidth:80, background:"transparent", border:"none", outline:"none", color:"#f0ede8", fontSize:12, padding:"1px 2px" }}
+        />
+      </div>
+      {open && (suggestions.length > 0 || input.trim()) && (
+        <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#18181c", border:"1px solid #2a2a30", borderRadius:8, zIndex:50, marginTop:3, overflow:"hidden", boxShadow:"0 4px 16px rgba(0,0,0,0.4)" }}>
+          {suggestions.map(t => {
+            const c = tagColor(t);
+            return (
+              <div key={t} onClick={() => add(t)} style={{ padding:"9px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}
+                onMouseEnter={e => e.currentTarget.style.background="#222226"}
+                onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+                <span style={{ width:8, height:8, borderRadius:"50%", background:c, flexShrink:0 }} />
+                <span style={{ fontSize:13, color:"#d0ccc8", flex:1 }}>{t}</span>
+              </div>
+            );
+          })}
+          {input.trim() && !tags.includes(input.trim().toLowerCase()) && (
+            <div onClick={() => add(input)} style={{ padding:"9px 12px", cursor:"pointer", fontSize:13, color:"#888", borderTop: suggestions.length?"1px solid #1e1e22":"none" }}
+              onMouseEnter={e => e.currentTarget.style.background="#222226"}
+              onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+              + Add "{input.trim().toLowerCase()}"
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Status select ────────────────────────────────────────────────────────────
 
 function StatusSelect({ value, onChange }) {
@@ -683,10 +768,11 @@ function StatusSelect({ value, onChange }) {
 
 // ─── Task Row ─────────────────────────────────────────────────────────────────
 
-function TaskRow({ task, onChange, onDelete, userName, allNames = [], roster = [], onPersonTap, selected, onSelect }) {
+function TaskRow({ task, onChange, onDelete, userName, allNames = [], roster = [], onPersonTap, onTagTap, allTags = [], selected, onSelect }) {
   const [expanded, setExpanded] = useState(false);
   const st       = TASK_STATUSES.find(s => s.id === task.status) ?? TASK_STATUSES[0];
   const assignees = task.assignees?.length ? task.assignees : (task.owner ? [task.owner] : []);
+  const tags      = task.tags ?? [];
 
   return (
     <div className="task-row" style={{ background:"#111113", borderRadius:10, border:`1px solid ${expanded?"#2a2a30":"#1e1e22"}`, overflow:"hidden", transition:"border-color 0.2s" }}>
@@ -709,6 +795,13 @@ function TaskRow({ task, onChange, onDelete, userName, allNames = [], roster = [
         <span onClick={() => setExpanded(!expanded)} style={{ flex:1, fontSize:13, fontWeight:500, color:task.status==="done"?"#444":"#d0ccc8", textDecoration:task.status==="done"?"line-through":"none", cursor:"pointer", lineHeight:1.4 }}>
           {task.label}
         </span>
+
+        {/* Tag badges */}
+        {tags.length > 0 && (
+          <div style={{ display:"flex", gap:3, flexWrap:"wrap", maxWidth:120 }}>
+            {tags.map(t => <TagBadge key={t} tag={t} onTap={onTagTap ? () => onTagTap(t) : undefined} />)}
+          </div>
+        )}
 
         {/* Assignee tags */}
         <div style={{ display:"flex", gap:4, flexWrap:"wrap", maxWidth:160 }}>
@@ -738,6 +831,7 @@ function TaskRow({ task, onChange, onDelete, userName, allNames = [], roster = [
               <input type="date" value={task.due} onChange={e => onChange({ ...task, due:e.target.value })} style={{ background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, color:task.due?"#f0ede8":"#555", padding:"7px 10px", fontSize:12 }} />
             </div>
           </div>
+          <TagInput tags={tags} onChange={newTags => onChange({ ...task, tags: newTags })} allTags={allTags} />
           <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
             <label style={{ fontSize:10, fontWeight:600, color:"#555", letterSpacing:"0.1em", textTransform:"uppercase" }}>Notes & Commentary</label>
             <textarea value={task.notes} onChange={e => onChange({ ...task, notes:e.target.value })} placeholder="Add detailed notes, context, links, supplier info..." rows={3} style={{ background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, color:"#c8c4bf", padding:"9px 11px", fontSize:13, lineHeight:1.6, resize:"vertical", minHeight:72 }} />
@@ -1354,6 +1448,7 @@ export default function App() {
   const [activeDept, setActiveDept] = useState(null);
   const [selectedArea, setSelectedArea] = useState(null);
   const [selectedPerson, setSelectedPerson] = useState(null);
+  const [selectedTag, setSelectedTag] = useState(null);
 
   // ── Identity ──────────────────────────────────────────────────────────────
   const [user, setUser] = useState(() => {
@@ -1921,6 +2016,14 @@ export default function App() {
       .filter(Boolean)
   )];
 
+  // All unique tags across this dept/year
+  const allTagNames = [...new Set(
+    Object.entries(trackerData)
+      .filter(([k]) => k.startsWith(`${activeFestival}__${activeYear}__${activeDept}__`))
+      .flatMap(([, tasks]) => tasks.flatMap(t => t.tags ?? []))
+      .filter(Boolean)
+  )];
+
 
   // ── Overlays ──────────────────────────────────────────────────────────────
   const identityOverlay = showIdentity && (
@@ -2324,6 +2427,14 @@ export default function App() {
                   People
                 </button>
               )}
+              {!isSupplier && tracker && allTagNames.length > 0 && (
+                <button onClick={()=>{ setSelectedTag(null); setScreen("tag-tasks"); }}
+                  style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.06em", whiteSpace:"nowrap" }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                  Tags
+                </button>
+              )}
               {!isSupplier && tracker && (
                 <button onClick={()=>{ setCalView(v=>!v); setMapView(false); }}
                   style={{ background:calView?"#f0ede811":"transparent", border:`1px solid ${calView?"#888":"#252528"}`, borderRadius:8, color:calView?"#f0ede8":"#555", fontSize:11, fontWeight:700, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.08em", whiteSpace:"nowrap", transition:"all 0.15s" }}>
@@ -2631,6 +2742,122 @@ export default function App() {
   }
 
 
+  // ── SCREEN: Tag tasks ─────────────────────────────────────────────────────
+  if (screen === "tag-tasks") {
+    const tagAreaGroups = festivalAreas
+      .map(areaName => ({
+        areaName,
+        tasks: getAreaTasks(activeDept, areaName).filter(t =>
+          !selectedTag || (t.tags ?? []).includes(selectedTag)
+        )
+      }))
+      .filter(g => g.tasks.length > 0);
+
+    const totalTasks   = tagAreaGroups.reduce((s,g)=>s+g.tasks.length,0);
+    const doneTasks    = tagAreaGroups.reduce((s,g)=>s+g.tasks.filter(t=>t.status==="done").length,0);
+    const blockedTasks = tagAreaGroups.reduce((s,g)=>s+g.tasks.filter(t=>t.status==="blocked").length,0);
+    const tags         = ["All", ...allTagNames];
+
+    return (
+      <>
+        <style>{css}</style>
+        <div className="screen" style={{ minHeight:"100vh", background:"#0a0a0a" }}>
+          <PageHeader>
+            <BackBtn onClick={()=>setScreen("areas")}/>
+            <FestivalLogo festival={festival} size={34}/>
+            <div style={{ flex:1 }}/>
+            <ModeBadge tracker={tracker}/>
+          </PageHeader>
+          <div style={{ maxWidth:700, margin:"0 auto", padding:"28px 20px 80px" }}>
+            <div style={{ marginBottom:22 }}>
+              <div style={{ fontWeight:800, fontSize:24, color:"#f0ede8", marginBottom:4 }}>
+                {selectedTag ? (
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                    <TagBadge tag={selectedTag} />
+                    <span>tasks</span>
+                  </span>
+                ) : "All Tags"}
+              </div>
+              <div style={{ fontSize:13, color:"#555" }}>
+                {dept?.name} · {activeYear} · {totalTasks} task{totalTasks!==1?"s":""}
+                {doneTasks>0&&<span> · {doneTasks} done</span>}
+                {blockedTasks>0&&<span style={{ color:"#ef4444" }}> · {blockedTasks} blocked</span>}
+              </div>
+            </div>
+
+            {/* Tag filter pills */}
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:22 }}>
+              {tags.map(t => {
+                const isActive = t==="All" ? !selectedTag : selectedTag===t;
+                const c = t==="All" ? "#888" : tagColor(t);
+                return (
+                  <button key={t} onClick={()=>setSelectedTag(t==="All"?null:t)}
+                    style={{ display:"flex", alignItems:"center", gap:5, background:isActive?c+"18":"transparent", border:`1px solid ${isActive?c+"66":"#252528"}`, borderRadius:20, padding:"5px 14px", color:isActive?c:"#555", fontSize:12, fontWeight:700, cursor:"pointer", transition:"all 0.15s", letterSpacing:"0.04em" }}>
+                    {t !== "All" && <span style={{ width:8, height:8, borderRadius:"50%", background:c, flexShrink:0 }}/>}
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+
+            {tagAreaGroups.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"60px 20px", color:"#333", fontSize:13 }}>
+                {selectedTag ? `No tasks tagged "${selectedTag}"` : "No tagged tasks yet"}
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:20 }}>
+                {tagAreaGroups.map(({ areaName, tasks }) => {
+                  const done    = tasks.filter(t=>t.status==="done").length;
+                  const blocked = tasks.filter(t=>t.status==="blocked").length;
+                  const pct     = tasks.length>0 ? Math.round(done/tasks.length*100) : 0;
+                  const rc      = blocked>0?"#ef4444":pct===100?"#22c55e":pct>0?"#eab308":"#3a3a3e";
+                  return (
+                    <div key={areaName} style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:12, overflow:"hidden" }}>
+                      <div style={{ padding:"12px 16px", borderBottom:"1px solid #1a1a1e", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
+                        onClick={()=>{ setSelectedArea(areaName); setScreen("area-detail"); }}>
+                        <span style={{ flex:1, fontWeight:700, fontSize:14, color:"#d0ccc8" }}>{areaName}</span>
+                        <span style={{ fontSize:11, color:"#555" }}>{done}/{tasks.length}</span>
+                        <div style={{ width:48, height:3, background:"#1e1e22", borderRadius:2, overflow:"hidden" }}>
+                          <div style={{ height:"100%", width:`${pct}%`, background:rc, borderRadius:2 }}/>
+                        </div>
+                        <span style={{ fontSize:11, color:"#333" }}>→</span>
+                      </div>
+                      <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:6 }}>
+                        {tasks.map(task => {
+                          const st       = TASK_STATUSES.find(s=>s.id===task.status)??TASK_STATUSES[0];
+                          const assignees = task.assignees?.length ? task.assignees : (task.owner?[task.owner]:[]);
+                          const taskTags  = (task.tags ?? []).filter(t => t !== selectedTag);
+                          const ov        = task.due && new Date(task.due)<new Date() && task.status!=="done";
+                          return (
+                            <div key={task.id} onClick={()=>{ setSelectedArea(areaName); setScreen("area-detail"); }}
+                              style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 10px", background:"#0d0d10", borderRadius:8, border:"1px solid #1a1a1e", cursor:"pointer" }}
+                              onMouseEnter={e=>e.currentTarget.style.borderColor="#2a2a30"}
+                              onMouseLeave={e=>e.currentTarget.style.borderColor="#1a1a1e"}>
+                              <div style={{ width:7, height:7, borderRadius:"50%", flexShrink:0, background:st.color, boxShadow:task.status!=="not-started"?`0 0 5px ${st.color}66`:"none" }}/>
+                              <span style={{ flex:1, fontSize:13, color:task.status==="done"?"#444":"#d0ccc8", textDecoration:task.status==="done"?"line-through":"none", lineHeight:1.4 }}>{task.label}</span>
+                              {taskTags.map(t=><TagBadge key={t} tag={t} onTap={()=>setSelectedTag(t)}/>)}
+                              {assignees.map(n=><AssigneeTag key={n} name={n} roster={roster} onTap={()=>{ setSelectedPerson(n); setScreen("person-tasks"); }}/>)}
+                              {task.due && <span style={{ fontSize:10, color:ov?"#ef4444":"#555", flexShrink:0, whiteSpace:"nowrap" }}>{new Date(task.due).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</span>}
+                              <StatusSelect value={task.status} onChange={v=>{
+                                const updated = getAreaTasks(activeDept, areaName).map(t => t.id===task.id?{...t,status:v,updated_by:userName}:t);
+                                setAreaTasks(areaName, updated);
+                              }}/>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+
   // ── SCREEN: Area detail ───────────────────────────────────────────────────
   const cats      = getCats(selectedArea);
   const areaId    = slugify(selectedArea);
@@ -2767,9 +2994,11 @@ export default function App() {
                         userName={userName}
                         allNames={allAssigneeNames}
                         roster={roster}
+                        allTags={allTagNames}
                         selected={selectedTasks.has(task.id)}
                         onSelect={!isSupplier ? ()=>toggleSelectTask(task.id) : undefined}
                         onPersonTap={(name) => { setSelectedPerson(name); setScreen("person-tasks"); }}
+                        onTagTap={(tag) => { setSelectedTag(tag); setScreen("tag-tasks"); }}
                         onChange={updated => setAreaTasks(selectedArea, areaTasks.map(t => t.id===task.id ? {...updated, updated_by:userName} : t))}
                         onDelete={() => setAreaTasks(selectedArea, areaTasks.filter(t => t.id!==task.id))}
                       />
