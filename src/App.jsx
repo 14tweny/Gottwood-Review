@@ -1513,6 +1513,32 @@ export default function App() {
   const [supplierToken]       = useState(() => parseSupplierToken());
   const isSupplier             = !!supplierToken;
 
+  // ── Global save-error toast ───────────────────────────────────────────────
+  const saveErrTimer = useRef(null);
+  const [saveErrMsg, setSaveErrMsg] = useState(null);
+  function showSaveError(msg = "Save failed — check your connection") {
+    clearTimeout(saveErrTimer.current);
+    setSaveErrMsg(msg);
+    saveErrTimer.current = setTimeout(() => setSaveErrMsg(null), 5000);
+  }
+  useEffect(() => {
+    let el = document.getElementById("__gw-save-err__");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "__gw-save-err__";
+      el.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(12px);background:#1a0808;border:1px solid #ef4444;border-radius:10px;padding:10px 20px;color:#ef4444;font-size:12px;font-weight:700;letter-spacing:0.06em;z-index:99999;pointer-events:none;transition:opacity 0.25s,transform 0.25s;opacity:0;";
+      document.body.appendChild(el);
+    }
+    if (saveErrMsg) {
+      el.textContent = "⚠  " + saveErrMsg;
+      el.style.opacity = "1";
+      el.style.transform = "translateX(-50%) translateY(0)";
+    } else {
+      el.style.opacity = "0";
+      el.style.transform = "translateX(-50%) translateY(12px)";
+    }
+  }, [saveErrMsg]);
+
   // ── Routing ──────────────────────────────────────────────────────────────
   const [screen, setScreen]         = useState("home");
   const [activeFestival, setActiveFestival] = useState(null);
@@ -1629,19 +1655,30 @@ export default function App() {
   }
 
   function setYearsFor(fid, fn) {
-    const next = typeof fn === "function" ? fn(getYears(fid)) : fn;
-    setEventYears(p => ({ ...p, [fid]: next }));
-    saveYearsToDB(fid, next);
+    let toSave;
+    setEventYears(p => {
+      const next = typeof fn === "function" ? fn(p[fid] ?? DEFAULT_YEARS[fid] ?? [CURRENT_YEAR]) : fn;
+      toSave = next;
+      return { ...p, [fid]: next };
+    });
+    if (toSave) saveYearsToDB(fid, toSave).catch(() => showSaveError());
   }
   function setDeptsFor(fid, year, fn) {
-    const current = eventDepts[fid];
-    // Migrate old array format to year-keyed object on first edit
-    const existing = Array.isArray(current) ? {} : (current ?? {});
-    const yearDepts = existing[year] ?? DEFAULT_DEPTS;
-    const next = typeof fn === "function" ? fn(yearDepts) : fn;
-    const updated = { ...existing, [year]: next };
-    setEventDepts(p => ({ ...p, [fid]: updated }));
-    saveDeptsToDB(fid, updated);
+    let toSave;
+    setEventDepts(p => {
+      const current = p[fid];
+      // Migrate old array format to year-keyed object on first edit
+      const raw = Array.isArray(current) ? {} : (current ?? {});
+      // Migrate data previously saved under null key (when year wasn't selected)
+      const existing = (raw[year] === undefined && raw["null"])
+        ? { ...raw, [year]: raw["null"] }
+        : raw;
+      const yearDepts = existing[year] ?? DEFAULT_DEPTS;
+      const next = typeof fn === "function" ? fn(yearDepts) : fn;
+      toSave = { ...existing, [year]: next };
+      return { ...p, [fid]: toSave };
+    });
+    if (toSave) saveDeptsToDB(fid, toSave).catch(() => showSaveError());
   }
 
   const festival     = FESTIVALS.find(f => f.id === activeFestival);
@@ -1695,12 +1732,14 @@ export default function App() {
 
   function updateRoster(fn, fid = activeFestival) {
     if (!fid) return;
+    let toSave;
     setRosters(p => {
       const current = p[fid] ?? [];
       const next = typeof fn === "function" ? fn(current) : fn;
-      saveRosterToDB(fid, next);
+      toSave = next;
       return { ...p, [fid]: next };
     });
+    if (toSave) saveRosterToDB(fid, toSave).catch(() => showSaveError());
   }
 
   // Find the best-matching roster member for a given name.
@@ -1933,11 +1972,13 @@ export default function App() {
   }
 
   function updateAreas(fn) {
+    let toSave;
     setAreas(p => {
       const next = typeof fn === "function" ? fn(p[deptKey] ?? []) : fn;
-      saveAreasToDB(next);
+      toSave = next;
       return { ...p, [deptKey]: next };
     });
+    if (toSave !== undefined) saveAreasToDB(toSave).catch(() => showSaveError());
   }
 
   const rawAreas      = areas[deptKey] ?? [];
@@ -1959,8 +2000,9 @@ export default function App() {
     const aId = slugify(aName);
     const k   = keys.dept(activeDept, aId);
     setTaskSaving(s => ({...s, [k]: true}));
-    await upsertReview(activeFestival, activeYear, activeDept, aId, aName, "__tasks__", { worked_well: userName, notes: JSON.stringify(tasks) });
+    const { error } = await upsertReview(activeFestival, activeYear, activeDept, aId, aName, "__tasks__", { worked_well: userName, notes: JSON.stringify(tasks) });
     setTaskSaving(s => ({...s, [k]: false}));
+    if (error) showSaveError();
   }, 1200);
 
   function setAreaTasks(aName, tasks) {
@@ -2005,13 +2047,15 @@ export default function App() {
     const newTask  = { ...makeTask(suggestion), notes: `AI suggestion from ${activeYear} review` };
     const updated  = [...existing, newTask];
     setTrackerData(p => ({...p, [k]: updated}));
-    upsertReview(activeFestival, nextTrackerYear, activeDept, slugify(aName), aName, "__tasks__", { worked_well: userName, notes: JSON.stringify(updated) });
+    upsertReview(activeFestival, nextTrackerYear, activeDept, slugify(aName), aName, "__tasks__", { worked_well: userName, notes: JSON.stringify(updated) })
+      .catch(() => showSaveError());
   }
 
   // ── Area descriptions ─────────────────────────────────────────────────────
   function getDesc(aName) { return areaDescriptions[keys.desc(activeFestival, activeYear, activeDept, aName)] ?? ""; }
   const saveDescDebounced = useDebounce(async (aName, text) => {
-    await upsertReview(activeFestival, activeYear, activeDept, slugify(aName), aName, "__desc__", { notes: text });
+    const { error } = await upsertReview(activeFestival, activeYear, activeDept, slugify(aName), aName, "__desc__", { notes: text });
+    if (error) showSaveError();
   }, 1000);
   function setDesc(aName, text) {
     setAreaDescriptions(p => ({...p, [keys.desc(activeFestival, activeYear, activeDept, aName)]: text}));
@@ -2036,14 +2080,16 @@ export default function App() {
   function saveAvailableCats(aName, pool) {
     setAreaAvailableCats(p => ({...p, [keys.cats(activeFestival, activeDept, aName)]: pool}));
     if (!activeFestival || !activeYear || !activeDept) return;
-    upsertReview(activeFestival, activeYear, activeDept, slugify(aName), aName, "__available_cats__", { notes: JSON.stringify(pool) });
+    upsertReview(activeFestival, activeYear, activeDept, slugify(aName), aName, "__available_cats__", { notes: JSON.stringify(pool) })
+      .catch(() => showSaveError());
   }
 
   function setCats(aName, newCats) {
     setAreaCategories(p => ({...p, [keys.cats(activeFestival, activeDept, aName)]: newCats}));
     if (!activeFestival || !activeYear || !activeDept) return;
     upsertReview(activeFestival, activeYear, activeDept, slugify(aName), aName, "__cats__", { notes: JSON.stringify(newCats) })
-      .then(({ error }) => { if (error) console.error("setCats save failed:", error); });
+      .then(({ error }) => { if (error) showSaveError(); })
+      .catch(() => showSaveError());
   }
 
   const handleSave = useCallback(async (aName, catName, patch) => {
@@ -2191,9 +2237,13 @@ export default function App() {
             </button>
           </div>
         </div>
-        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"40px 24px" }}>
+        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", padding:"64px 24px" }}>
           <div style={{ width:"100%", maxWidth:480 }}>
             <div style={{ textAlign:"center", marginBottom:48 }}>
+              {FOURTEEN_TWENTY_LOGO
+                ? <img src={FOURTEEN_TWENTY_LOGO} style={{ height:84, objectFit:"contain", display:"block", margin:"0 auto 40px" }} alt="14twenty" />
+                : <div style={{ fontSize:32, fontWeight:800, letterSpacing:"0.15em", color:"#f0ede8", marginBottom:40 }}>14TWENTY</div>
+              }
               <div style={{ fontWeight:700, fontSize:11, letterSpacing:"0.2em", color:"#333" }}>SELECT AN EVENT</div>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
@@ -2566,7 +2616,7 @@ export default function App() {
                   reader.onload = ev => {
                     const svgText = ev.target.result;
                     setFestivalMaps(p => ({ ...p, [activeFestival]: svgText }));
-                    saveFestivalMap(activeFestival, svgText);
+                    saveFestivalMap(activeFestival, svgText).catch(() => showSaveError());
                     setMapView(true);
                   };
                   reader.readAsText(file);
