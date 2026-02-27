@@ -1585,10 +1585,6 @@ export default function App() {
   // ── Team screen form state (must be at App level — Rules of Hooks) ────────
   const [teamNewName, setTeamNewName] = useState("");
   const [teamNewRole, setTeamNewRole] = useState("");
-  const filteredFestivalAreas = areaSearch.trim()
-    ? festivalAreas.filter(a => a.toLowerCase().includes(areaSearch.toLowerCase()))
-    : festivalAreas;
-
   // ── Task-level search (area-detail screen) ────────────────────────────────
   // ── Bulk select & task search ─────────────────────────────────────────────
   const [selectedTasks, setSelectedTasks]     = useState(new Set());
@@ -1716,6 +1712,11 @@ export default function App() {
   const festivalAreas = isSupplier && supplierToken?.filter
     ? rawAreas.filter(a => slugify(a).includes(slugify(supplierToken.filter)))
     : rawAreas;
+
+  // Filtered areas for the area-list search bar
+  const filteredFestivalAreas = areaSearch.trim()
+    ? festivalAreas.filter(a => a.toLowerCase().includes(areaSearch.toLowerCase()))
+    : festivalAreas;
 
   // ── Tracker data ──────────────────────────────────────────────────────────
   function getAreaTasks(did, aName, fid = activeFestival, yr = activeYear) {
