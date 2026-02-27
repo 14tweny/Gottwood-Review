@@ -1167,7 +1167,7 @@ function SAGDashboard({ festival, years, getDepts, getAreaTasks, allAreas, onClo
   // Collect all council-licensing tasks with due dates across all tracker years
   const allDeadlines = [];
   years.filter(y => isTrackerYear(y)).forEach(year => {
-    const depts = getDepts(festival.id);
+    const depts = getDepts(festival.id, year);
     const clDept = depts.find(d => d.id==="council-licensing");
     if (!clDept) return;
     const deptAreas = allAreas[keys.dept(festival.id, clDept.id)] ?? [];
@@ -1437,19 +1437,27 @@ export default function App() {
         const yearsRow = data.find(r => r.category_id==="__years__");
         const deptsRow = data.find(r => r.category_id==="__depts__");
         if (yearsRow) { try { const y=JSON.parse(yearsRow.notes); if(Array.isArray(y)) setEventYears(p=>({...p,[activeFestival]:y})); } catch(e) {} }
-        if (deptsRow) { try { const d=JSON.parse(deptsRow.notes); if(Array.isArray(d)) setEventDepts(p=>({...p,[activeFestival]:d})); } catch(e) {} }
+        if (deptsRow) { try { const d=JSON.parse(deptsRow.notes); if(d && (Array.isArray(d) || typeof d==="object")) setEventDepts(p=>({...p,[activeFestival]:d})); } catch(e) {} }
       });
   }, [activeFestival]);
 
   async function saveYearsToDB(fid, years) {
     await upsertReview(fid, "__config__", "__years__", "__years__", "__config__", "__years__", { notes: JSON.stringify(years) });
   }
-  async function saveDeptsToDB(fid, depts) {
-    await upsertReview(fid, "__config__", "__depts__", "__depts__", "__config__", "__depts__", { notes: JSON.stringify(depts) });
+  async function saveDeptsToDB(fid, allYearDepts) {
+    // allYearDepts is now { [year]: [...depts] } — persisted as a single config record
+    await upsertReview(fid, "__config__", "__depts__", "__depts__", "__config__", "__depts__", { notes: JSON.stringify(allYearDepts) });
   }
 
   function getYears(fid) { return eventYears[fid] ?? DEFAULT_YEARS[fid] ?? [CURRENT_YEAR]; }
-  function getDepts(fid) { return eventDepts[fid] ?? DEFAULT_DEPTS; }
+  function getDepts(fid, year) {
+    const fidDepts = eventDepts[fid];
+    if (!fidDepts) return DEFAULT_DEPTS;
+    // Old format (pre-year-isolation): plain array — fall back for any year
+    if (Array.isArray(fidDepts)) return fidDepts;
+    // New format: { [year]: [...depts] }
+    return fidDepts[year] ?? DEFAULT_DEPTS;
+  }
 
   function setYearsFor(fid, fn) {
     setEventYears(p => {
@@ -1458,17 +1466,22 @@ export default function App() {
       return { ...p, [fid]: next };
     });
   }
-  function setDeptsFor(fid, fn) {
+  function setDeptsFor(fid, year, fn) {
     setEventDepts(p => {
-      const next = typeof fn === "function" ? fn(getDepts(fid)) : fn;
-      saveDeptsToDB(fid, next);
-      return { ...p, [fid]: next };
+      const current = p[fid];
+      // Migrate old array format to year-keyed object on first edit
+      const existing = Array.isArray(current) ? {} : (current ?? {});
+      const yearDepts = existing[year] ?? DEFAULT_DEPTS;
+      const next = typeof fn === "function" ? fn(yearDepts) : fn;
+      const updated = { ...existing, [year]: next };
+      saveDeptsToDB(fid, updated);
+      return { ...p, [fid]: updated };
     });
   }
 
   const festival     = FESTIVALS.find(f => f.id === activeFestival);
   const activeYears  = activeFestival ? getYears(activeFestival) : [];
-  const activeDepts  = activeFestival ? getDepts(activeFestival) : DEFAULT_DEPTS;
+  const activeDepts  = activeFestival ? getDepts(activeFestival, activeYear) : DEFAULT_DEPTS;
   const tracker      = isTrackerYear(activeYear);
   const deptKey      = keys.dept(activeFestival, activeDept);
   const dept         = activeDepts.find(d => d.id === activeDept);
@@ -2075,13 +2088,13 @@ export default function App() {
   }
 
   if (screen === "manage-depts") {
-    const fid = activeFestival, ds = fid ? getDepts(fid) : DEFAULT_DEPTS;
+    const fid = activeFestival, yr = activeYear, ds = fid ? getDepts(fid, yr) : DEFAULT_DEPTS;
     return (
       <ManageScreen title={`Manage Departments${festival?` — ${festival.name}`:""}`} onBack={()=>setScreen(fid?"departments":"home")}>
         {fid ? (
           <>
-            {ds.map(d => <ManageRow key={d.id} label={d.name} onDelete={()=>setDeptsFor(fid,p=>p.filter(x=>x.id!==d.id))}/>)}
-            <AddRow placeholder="Department name..." onAdd={name=>setDeptsFor(fid,p=>[...p,{id:slugify(name),name}])}/>
+            {ds.map(d => <ManageRow key={d.id} label={d.name} onDelete={()=>setDeptsFor(fid,yr,p=>p.filter(x=>x.id!==d.id))}/>)}
+            <AddRow placeholder="Department name..." onAdd={name=>setDeptsFor(fid,yr,p=>[...p,{id:slugify(name),name}])}/>
           </>
         ) : <div style={{ textAlign:"center", padding:40, color:"#444", fontSize:13 }}>Open an event first to manage its departments.</div>}
       </ManageScreen>
