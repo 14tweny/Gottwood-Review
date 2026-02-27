@@ -1,13 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
-
-// ─── Logos (inline SVG data URIs — no external file dependency) ───────────────
-// These render as text-based wordmarks so the app works without any logo files.
-// Replace these with actual base64 image data URIs if you have the logo files.
-
-const GOTTWOOD_LOGO = null;       // will fall through to text wordmark in FestivalLogo
-const PEEP_LOGO = null;           // will fall through to text wordmark in FestivalLogo
-const FOURTEEN_TWENTY_LOGO = null; // will fall through to text wordmark in HomeHeader
+import { GOTTWOOD_LOGO, PEEP_LOGO, FOURTEEN_TWENTY_LOGO } from "./logos.js";
 
 // ─── SiteMap (inline stub — replace with real component if needed) ─────────────
 function SiteMap({ festival, areas, tracker, getAreaColor, onAreaTap }) {
