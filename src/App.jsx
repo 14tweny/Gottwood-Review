@@ -108,9 +108,14 @@ function lsGet(key, fb) { try { const v = localStorage.getItem(key); return v ? 
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
 
 function makeTask(label, i = 0) {
-  return { id: `task-${Date.now()}-${i}`, label, status: "not-started", owner: "", notes: "", due: "" };
+  return { id: `task-${Date.now()}-${i}`, label, status: "not-started", owner: "", assignees: [], notes: "", due: "" };
 }
-function getDefaultTasks(dept, areaName) {
+function getDefaultTasks(dept, areaName, festivalId) {
+  // Only pre-populate tasks for known preset areas — custom/new areas start empty
+  if (festivalId) {
+    const presetAreas = (DEFAULT_DEPT_AREAS[festivalId]?.[dept] ?? []).map(a => slugify(a));
+    if (!presetAreas.includes(slugify(areaName))) return [];
+  }
   const pool = DEPT_DEFAULT_TASKS[dept] ?? {};
   const slug = slugify(areaName);
   const matched = Object.entries(pool).find(([k]) => k !== "_default" && slug.includes(k));
@@ -137,9 +142,9 @@ async function getAISuggestion({ areaName, catName, workedWell, needsImprovement
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 150,
-        system: "You are a festival production assistant. Based on a post-event review note, generate exactly ONE short actionable task for next year's production tracker. Reply with ONLY the task label — no explanation, no bullet point, no quotes. Maximum 12 words.",
+        system: "You are a festival production assistant. Based on a post-event review note, generate exactly ONE clear actionable task for next year's production tracker. Reply with ONLY the task label — no explanation, no bullet point, no quotes, no markdown. 5-15 words, starting with an action verb.",
         messages: [{ role: "user", content: `Area: ${areaName}\nSection: ${catName}\nReview: ${text}` }],
       }),
     });
@@ -328,22 +333,103 @@ function VotingBar({ votes, userName, onChange }) {
 const lbSt = { fontSize:10, fontWeight:600, color:"#555", letterSpacing:"0.1em", textTransform:"uppercase" };
 const taSt = (bg) => ({ width:"100%", background:bg, border:"1px solid #222", borderRadius:8, color:"#c8c4bf", fontSize:13, padding:"10px 12px", lineHeight:1.6, boxSizing:"border-box" });
 
+// Parse a comment field — handles both legacy string and new [{text,author,ts}] format
+function parseComments(raw) {
+  if (!raw) return [];
+  if (typeof raw === "string") {
+    // Legacy plain string — wrap as single anonymous entry
+    return raw.trim() ? [{ text: raw.trim(), author: null, ts: null }] : [];
+  }
+  if (Array.isArray(raw)) return raw;
+  return [];
+}
+
+// Serialise comments back to the storage format
+function serialiseComments(entries) {
+  return entries; // stored as JSON array in the field
+}
+
+function CommentThread({ entries=[], onSave, userName, placeholder, bgColor, isSupplier }) {
+  const [draft, setDraft] = useState("");
+  const myEntry = entries.find(e => e.author === userName);
+
+  function handleChange(e) {
+    const v = e.target.value;
+    setDraft(v);
+    let updated;
+    if (myEntry) {
+      updated = v.trim()
+        ? entries.map(en => en.author === userName ? { ...en, text: v, ts: new Date().toISOString() } : en)
+        : entries.filter(en => en.author !== userName);
+    } else {
+      updated = v.trim() ? [...entries, { text: v, author: userName, ts: new Date().toISOString() }] : entries;
+    }
+    onSave(serialiseComments(updated));
+  }
+
+  function deleteEntry(index) {
+    onSave(serialiseComments(entries.filter((_, i) => i !== index)));
+  }
+
+  useEffect(() => { setDraft(myEntry?.text ?? ""); }, [myEntry?.text]);
+
+  const others = entries.filter(e => e.author !== userName && e.text?.trim());
+  const othersWithIndex = entries
+    .map((e, i) => ({ ...e, _i: i }))
+    .filter(e => e.author !== userName && e.text?.trim());
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+      {othersWithIndex.map((e) => {
+        const hue = (e.author ?? "anon").split("").reduce((a,c)=>a+c.charCodeAt(0),0) % 360;
+        const canDelete = !isSupplier; // non-suppliers can delete any entry
+        return (
+          <div key={e._i} style={{ background:`hsl(${hue},30%,8%)`, border:`1px solid hsl(${hue},30%,15%)`, borderRadius:8, padding:"8px 10px", display:"flex", flexDirection:"column", gap:4, position:"relative" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+              <div style={{ fontSize:10, fontWeight:700, color:`hsl(${hue},55%,55%)`, letterSpacing:"0.06em" }}>
+                {e.author ?? "Anonymous"}{e.ts ? ` · ${new Date(e.ts).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}` : ""}
+              </div>
+              {canDelete && (
+                <button
+                  onClick={() => deleteEntry(e._i)}
+                  style={{ background:"none", border:"none", color:"#2a2a2e", fontSize:13, cursor:"pointer", padding:"0 2px", lineHeight:1, transition:"color 0.12s" }}
+                  onMouseEnter={e=>e.currentTarget.style.color="#ef4444"}
+                  onMouseLeave={e=>e.currentTarget.style.color="#2a2a2e"}
+                  title="Delete comment"
+                >✕</button>
+              )}
+            </div>
+            <div style={{ fontSize:13, color:"#b0aca8", lineHeight:1.5 }}>{e.text}</div>
+          </div>
+        );
+      })}
+      <textarea
+        value={draft}
+        onChange={handleChange}
+        placeholder={placeholder}
+        style={{ ...taSt(bgColor) }}
+      />
+      {draft.trim() && (
+        <div style={{ fontSize:10, color:"#444", letterSpacing:"0.05em" }}>
+          Saving as <span style={{ color:"#666" }}>{userName}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove, userName, isSupplier, nextYear, areaName, onAISuggestion }) {
   const status = saveStatuses[saveKey] ?? "idle";
   const [open, setOpen] = useState(false);
-  const [aiStatus, setAiStatus] = useState(null); // null | "thinking" | "done"
+  const [aiStatus, setAiStatus] = useState(null);
   const aiTimer = useRef(null);
 
   const votes = data?.votes ?? {};
-  const [ww, setWw] = useState(data?.worked_well ?? "");
-  const [ni, setNi] = useState(data?.needs_improvement ?? "");
+  const wwEntries = parseComments(data?.worked_well);
+  const niEntries = parseComments(data?.needs_improvement);
   const [no, setNo] = useState(data?.notes ?? "");
 
-  useEffect(() => {
-    setWw(data?.worked_well ?? "");
-    setNi(data?.needs_improvement ?? "");
-    setNo(data?.notes ?? "");
-  }, [data]);
+  useEffect(() => { setNo(data?.notes ?? ""); }, [data]);
 
   function buildPatch(newVotes, newWw, newNi, newNo) {
     return { votes: newVotes, worked_well: newWw, needs_improvement: newNi, notes: newNo };
@@ -355,36 +441,58 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
     if (!nextYear || isSupplier) return;
     clearTimeout(aiTimer.current);
     aiTimer.current = setTimeout(async () => {
-      if (!newWw && !newNi && !newNo) return;
+      // Build text from all comment entries
+      const wwText = (Array.isArray(newWw) ? newWw.map(e=>e.text) : [newWw]).filter(Boolean).join(" ");
+      const niText = (Array.isArray(newNi) ? newNi.map(e=>e.text) : [newNi]).filter(Boolean).join(" ");
+      const text = [wwText, niText, newNo].filter(Boolean).join(" | ");
+      if (text.trim().length < 15) return;
       setAiStatus("thinking");
-      const suggestion = await getAISuggestion({ areaName, catName, workedWell: newWw, needsImprovement: newNi, notes: newNo });
-      if (suggestion) { onAISuggestion(suggestion); setAiStatus("done"); setTimeout(() => setAiStatus(null), 4000); }
+      const suggestion = await getAISuggestion({ areaName, catName, workedWell: wwText, needsImprovement: niText, notes: newNo });
+      if (suggestion) { onAISuggestion(suggestion); setAiStatus("done"); setTimeout(() => setAiStatus(null), 5000); }
       else setAiStatus(null);
-    }, 2000);
+    }, 2500);
   }
 
-  function handleWW(v) { setWw(v); debouncedSave(buildPatch(votes, v, ni, no)); triggerAI(v, ni, no); }
-  function handleNI(v) { setNi(v); debouncedSave(buildPatch(votes, ww, v, no)); triggerAI(ww, v, no); }
-  function handleNo(v) { setNo(v); debouncedSave(buildPatch(votes, ww, ni, v)); triggerAI(ww, ni, v); }
-  function handleVotes(newVotes) { onSave(buildPatch(newVotes, ww, ni, no)); }
+  function handleWW(newEntries) {
+    const patch = buildPatch(votes, newEntries, niEntries, no);
+    debouncedSave(patch);
+    triggerAI(newEntries, niEntries, no);
+  }
+  function handleNI(newEntries) {
+    const patch = buildPatch(votes, wwEntries, newEntries, no);
+    debouncedSave(patch);
+    triggerAI(wwEntries, newEntries, no);
+  }
+  function handleNo(v) {
+    setNo(v);
+    const patch = buildPatch(votes, wwEntries, niEntries, v);
+    debouncedSave(patch);
+    triggerAI(wwEntries, niEntries, v);
+  }
+  function handleVotes(newVotes) { onSave(buildPatch(newVotes, wwEntries, niEntries, no)); }
 
   const allVals = Object.values(votes);
   const total = allVals.length;
   let modeVal = null;
   if (total > 0) modeVal = [1,2,3,4,5].map(v=>({v,c:allVals.filter(x=>x===v).length})).reduce((a,b)=>b.c>a.c?b:a).v;
   const modeRating = modeVal ? getRating(modeVal) : null;
-  const hasContent = ww || ni || no;
+  const hasContent = wwEntries.length || niEntries.length || no;
 
   return (
     <div style={{ background:"#111113", borderRadius:12, border:`1px solid ${open?"#2a2a30":"#1e1e22"}`, overflow:"hidden", transition:"border-color 0.2s" }}>
       <div style={{ display:"flex", alignItems:"stretch" }}>
         <button onClick={() => setOpen(!open)} style={{ flex:1, display:"flex", alignItems:"center", gap:12, padding:"14px 16px", background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
+          <div data-drag="true" title="Drag to reorder" style={{ cursor:"grab", color:"#2a2a2e", fontSize:14, flexShrink:0, lineHeight:1, padding:"0 2px", userSelect:"none" }}>⠿</div>
           <div style={{ width:10, height:10, borderRadius:"50%", flexShrink:0, background: modeRating ? modeRating.color : "#252528", boxShadow: modeRating ? `0 0 6px ${modeRating.color}66` : "none" }} />
           <span style={{ fontWeight:700, fontSize:13, letterSpacing:"0.05em", flex:1, color: modeRating||hasContent ? "#e8e4df" : "#555" }}>{catName.toUpperCase()}</span>
           {status==="saving" && <span style={{ fontSize:10, color:"#555" }}>SAVING…</span>}
           {status==="saved"  && <span className="save-pulse" style={{ fontSize:10, color:"#22c55e" }}>SAVED</span>}
           {total>0 && !open && modeRating && <span style={{ fontSize:10, fontWeight:700, color:modeRating.color, letterSpacing:"0.06em" }}>{modeRating.label.toUpperCase()} · {total}v</span>}
-          {!total && hasContent && !open && <span style={{ fontSize:10, color:"#444", letterSpacing:"0.06em" }}>NOTES</span>}
+          {!total && hasContent && !open && (
+            <span style={{ fontSize:10, color:"#444", letterSpacing:"0.06em" }}>
+              {[...new Set([...wwEntries,...niEntries].map(e=>e.author).filter(Boolean))].slice(0,3).join(", ") || "NOTES"}
+            </span>
+          )}
           <span style={{ color:"#333", fontSize:12, transform:open?"rotate(180deg)":"none", transition:"transform 0.2s", display:"inline-block", marginLeft:4 }}>▼</span>
         </button>
         {!isSupplier && (
@@ -400,11 +508,11 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               <label style={lbSt}>✓ What worked well</label>
-              <textarea value={ww} onChange={e => handleWW(e.target.value)} placeholder="What went well..." style={taSt("#0a1a12")} />
+              <CommentThread entries={wwEntries} onSave={handleWW} userName={userName} placeholder="What went well..." bgColor="#0a1a12" isSupplier={isSupplier} />
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
               <label style={lbSt}>↑ Needs improvement</label>
-              <textarea value={ni} onChange={e => handleNI(e.target.value)} placeholder="What to fix..." style={taSt("#1a0e0e")} />
+              <CommentThread entries={niEntries} onSave={handleNI} userName={userName} placeholder="What to fix..." bgColor="#1a0e0e" isSupplier={isSupplier} />
             </div>
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -414,7 +522,7 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
           {aiStatus && (
             <div className="ai-pulse" style={{ display:"flex", alignItems:"center", gap:8, fontSize:11, color: aiStatus==="done" ? "#a78bfa" : "#555", letterSpacing:"0.05em" }}>
               <span>✦</span>
-              {aiStatus==="thinking" ? `Generating ${nextYear} tracker suggestion…` : `Suggestion added to ${nextYear} tracker`}
+              {aiStatus==="thinking" ? `Generating ${nextYear} tracker suggestion…` : `Suggestion added to ${nextYear} tracker ✓`}
             </div>
           )}
         </div>
@@ -434,15 +542,419 @@ function StatusSelect({ value, onChange }) {
   );
 }
 
-function TaskRow({ task, onChange, onDelete, userName }) {
+function AssigneeTag({ name, onRemove, onTap }) {
+  const initials = name.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+  const hue = name.split("").reduce((a,c)=>a+c.charCodeAt(0),0) % 360;
+  const color = `hsl(${hue},55%,65%)`;
+  return (
+    <span
+      onClick={e=>{ e.stopPropagation(); if(onTap) onTap(); }}
+      style={{ display:"inline-flex", alignItems:"center", gap:4, background:`hsl(${hue},55%,12%)`, border:`1px solid hsl(${hue},55%,25%)`, borderRadius:20, padding:"2px 8px 2px 6px", fontSize:11, color, fontWeight:600, flexShrink:0, cursor:onTap?"pointer":"default", transition:"filter 0.15s" }}
+      onMouseEnter={e=>{ if(onTap) e.currentTarget.style.filter="brightness(1.3)"; }}
+      onMouseLeave={e=>{ e.currentTarget.style.filter="none"; }}
+    >
+      <span style={{ width:16, height:16, borderRadius:"50%", background:`hsl(${hue},55%,25%)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700 }}>{initials}</span>
+      {name}
+      {onRemove && <span onClick={e=>{e.stopPropagation();onRemove();}} style={{ cursor:"pointer", opacity:0.6, fontSize:12, lineHeight:1, marginLeft:2 }}>×</span>}
+    </span>
+  );
+}
+
+function AssigneeInput({ assignees=[], onChange, allNames=[] }) {
+  const [input, setInput] = useState("");
+  const [open, setOpen]   = useState(false);
+  const ref               = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) { if(ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const suggestions = allNames.filter(n => !assignees.includes(n) && n.toLowerCase().includes(input.toLowerCase()));
+
+  function add(name) {
+    const n = name.trim();
+    if (!n || assignees.includes(n)) return;
+    onChange([...assignees, n]);
+    setInput(""); setOpen(false);
+  }
+
+  function remove(name) { onChange(assignees.filter(a => a !== name)); }
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <label style={lbSt}>Assigned to</label>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:5, background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, padding:"6px 8px", minHeight:34, cursor:"text" }}
+        onClick={() => { setOpen(true); ref.current?.querySelector("input")?.focus(); }}>
+        {assignees.map(n => <AssigneeTag key={n} name={n} onRemove={() => remove(n)} />)}
+        <input
+          value={input}
+          onChange={e => { setInput(e.target.value); setOpen(true); }}
+          onKeyDown={e => {
+            if (e.key === "Enter" && input.trim()) { e.preventDefault(); add(input); }
+            if (e.key === "Backspace" && !input && assignees.length) remove(assignees[assignees.length-1]);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={assignees.length ? "" : "Add person…"}
+          style={{ flex:1, minWidth:80, background:"transparent", border:"none", outline:"none", color:"#f0ede8", fontSize:12, padding:"1px 2px" }}
+        />
+      </div>
+      {open && (suggestions.length > 0 || input.trim()) && (
+        <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#18181c", border:"1px solid #2a2a30", borderRadius:8, zIndex:50, marginTop:3, overflow:"hidden", boxShadow:"0 4px 16px rgba(0,0,0,0.4)" }}>
+          {suggestions.map(n => (
+            <div key={n} onClick={() => add(n)}
+              style={{ padding:"9px 12px", cursor:"pointer", fontSize:13, color:"#d0ccc8", display:"flex", alignItems:"center", gap:8 }}
+              onMouseEnter={e => e.currentTarget.style.background="#222226"}
+              onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+              <AssigneeTag name={n} />
+            </div>
+          ))}
+          {input.trim() && !assignees.includes(input.trim()) && (
+            <div onClick={() => add(input)}
+              style={{ padding:"9px 12px", cursor:"pointer", fontSize:13, color:"#888", borderTop: suggestions.length?"1px solid #1e1e22":"none" }}
+              onMouseEnter={e => e.currentTarget.style.background="#222226"}
+              onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+              + Add "{input.trim()}"
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tracker Calendar ────────────────────────────────────────────────────────
+function TrackerCalendar({ areas, getAreaTasks, activeDept, activeFestival, activeYear, onTaskClick }) {
+  const today = new Date();
+  const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+
+  // Gather all tasks with due dates across every area
+  const tasksByDate = {};
+  areas.forEach(areaName => {
+    const tasks = getAreaTasks(activeDept, areaName, activeFestival, activeYear);
+    tasks.forEach(task => {
+      if (!task.due) return;
+      const key = task.due.slice(0, 10); // YYYY-MM-DD
+      if (!tasksByDate[key]) tasksByDate[key] = [];
+      tasksByDate[key].push({ ...task, areaName });
+    });
+  });
+
+  const year  = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDay  = new Date(year, month, 1).getDay(); // 0=Sun
+  const startPad  = (firstDay + 6) % 7; // Monday-start
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const totalCells = Math.ceil((startPad + daysInMonth) / 7) * 7;
+
+  const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const dayNames   = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+  function statusColor(status) {
+    if (status === "done")        return "#22c55e";
+    if (status === "in-progress") return "#eab308";
+    if (status === "blocked")     return "#ef4444";
+    return "#3a3a4a";
+  }
+
+  // Consistent area colour derived from name
+  function areaColor(name) {
+    const hue = name.split("").reduce((a,c) => a + c.charCodeAt(0), 0) % 360;
+    return `hsl(${hue},55%,60%)`;
+  }
+
+  const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
+  const goToday   = () => setViewDate(new Date(today.getFullYear(), today.getMonth(), 1));
+
+  // Upcoming tasks summary (next 60 days)
+  const upcoming = [];
+  for (let d = 0; d < 60; d++) {
+    const dt  = new Date(today);
+    dt.setDate(today.getDate() + d);
+    const key = dt.toISOString().slice(0, 10);
+    if (tasksByDate[key]) {
+      tasksByDate[key].forEach(t => {
+        if (t.status !== "done") upcoming.push({ ...t, dateKey: key, date: dt });
+      });
+    }
+  }
+
+  const overdue = [];
+  const todayKey = today.toISOString().slice(0, 10);
+  Object.entries(tasksByDate).forEach(([key, tasks]) => {
+    if (key < todayKey) tasks.forEach(t => { if (t.status !== "done") overdue.push({ ...t, dateKey: key }); });
+  });
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+
+      {/* Overdue banner */}
+      {overdue.length > 0 && (
+        <div style={{ background:"#1a0808", border:"1px solid #3a1a1a", borderRadius:12, padding:"12px 16px" }}>
+          <div style={{ fontSize:10, fontWeight:700, color:"#ef4444", letterSpacing:"0.1em", marginBottom:8 }}>
+            ⚠ {overdue.length} OVERDUE TASK{overdue.length>1?"S":""}
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+            {overdue.slice(0,5).map((t,i) => (
+              <div key={i} onClick={() => onTaskClick(t.areaName)}
+                style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", padding:"4px 6px", borderRadius:6 }}
+                onMouseEnter={e => e.currentTarget.style.background="#2a1010"}
+                onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+                <span style={{ fontSize:10, color:"#ef4444", flexShrink:0, fontFamily:"monospace" }}>
+                  {new Date(t.dateKey+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+                </span>
+                <span style={{ fontSize:12, color:"#d0ccc8", flex:1 }}>{t.label}</span>
+                <span style={{ fontSize:10, color:"#555" }}>{t.areaName}</span>
+              </div>
+            ))}
+            {overdue.length > 5 && <div style={{ fontSize:10, color:"#555", paddingLeft:6 }}>+{overdue.length-5} more</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Month calendar */}
+      <div style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:14, overflow:"hidden" }}>
+
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"14px 16px", borderBottom:"1px solid #1a1a1e" }}>
+          <button onClick={prevMonth} style={{ background:"none", border:"1px solid #252528", borderRadius:7, color:"#666", fontSize:16, width:32, height:32, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>‹</button>
+          <span style={{ flex:1, textAlign:"center", fontWeight:700, fontSize:15, color:"#e8e4df", letterSpacing:"0.04em" }}>
+            {monthNames[month]} {year}
+          </span>
+          <button onClick={nextMonth} style={{ background:"none", border:"1px solid #252528", borderRadius:7, color:"#666", fontSize:16, width:32, height:32, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>›</button>
+          {(month !== today.getMonth() || year !== today.getFullYear()) && (
+            <button onClick={goToday} style={{ background:"none", border:"1px solid #252528", borderRadius:7, color:"#555", fontSize:10, fontWeight:700, padding:"0 10px", height:32, cursor:"pointer", letterSpacing:"0.06em" }}>TODAY</button>
+          )}
+        </div>
+
+        {/* Day name headers */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", borderBottom:"1px solid #1a1a1e" }}>
+          {dayNames.map(d => (
+            <div key={d} style={{ textAlign:"center", padding:"8px 0", fontSize:10, fontWeight:700, color:"#333", letterSpacing:"0.08em" }}>{d}</div>
+          ))}
+        </div>
+
+        {/* Day cells */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
+          {Array.from({length: totalCells}).map((_, i) => {
+            const dayNum = i - startPad + 1;
+            const isValid = dayNum >= 1 && dayNum <= daysInMonth;
+            const cellDate = isValid ? new Date(year, month, dayNum) : null;
+            const dateKey  = cellDate ? cellDate.toISOString().slice(0,10) : null;
+            const isToday  = dateKey === todayKey;
+            const isPast   = cellDate && cellDate < today && !isToday;
+            const dayTasks = dateKey ? (tasksByDate[dateKey] ?? []) : [];
+            const hasDue   = dayTasks.length > 0;
+
+            return (
+              <div key={i} style={{
+                minHeight: 72,
+                padding: "6px 4px 4px",
+                borderRight: (i+1)%7===0 ? "none" : "1px solid #161618",
+                borderBottom: i < totalCells-7 ? "1px solid #161618" : "none",
+                background: isToday ? "#0e0e18" : "transparent",
+              }}>
+                {isValid && (
+                  <>
+                    <div style={{
+                      fontSize: 11, fontWeight: isToday ? 800 : 500,
+                      color: isToday ? "#a78bfa" : isPast ? "#333" : "#666",
+                      textAlign: "right", marginBottom: 3, letterSpacing: "0.02em",
+                    }}>
+                      {isToday ? (
+                        <span style={{ background:"#a78bfa", color:"#0a0a0a", borderRadius:"50%", width:18, height:18, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:10 }}>{dayNum}</span>
+                      ) : dayNum}
+                    </div>
+                    {dayTasks.slice(0,3).map((t, ti) => {
+                      const isOverdue = isPast && t.status !== "done";
+                      const dotColor  = isOverdue ? "#ef4444" : statusColor(t.status);
+                      return (
+                        <div key={ti}
+                          onClick={() => onTaskClick(t.areaName)}
+                          title={`${t.label} · ${t.areaName}`}
+                          style={{
+                            fontSize: 10, lineHeight: 1.3,
+                            color: isOverdue ? "#ef4444" : t.status === "done" ? "#444" : "#888",
+                            background: isOverdue ? "#2a0a0a" : "#1a1a1e",
+                            borderLeft: `2px solid ${dotColor}`,
+                            borderRadius: "0 4px 4px 0",
+                            padding: "2px 5px",
+                            marginBottom: 2,
+                            cursor: "pointer",
+                            overflow: "hidden",
+                            whiteSpace: "nowrap",
+                            textOverflow: "ellipsis",
+                            textDecoration: t.status === "done" ? "line-through" : "none",
+                            transition: "background 0.1s",
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = isOverdue ? "#3a1010" : "#252528"}
+                          onMouseLeave={e => e.currentTarget.style.background = isOverdue ? "#2a0a0a" : "#1a1a1e"}
+                        >
+                          {t.label}
+                        </div>
+                      );
+                    })}
+                    {dayTasks.length > 3 && (
+                      <div style={{ fontSize:9, color:"#444", paddingLeft:4, letterSpacing:"0.04em" }}>+{dayTasks.length-3} more</div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Upcoming strip */}
+      {upcoming.length > 0 && (
+        <div style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:12, overflow:"hidden" }}>
+          <div style={{ padding:"12px 16px", borderBottom:"1px solid #1a1a1e", fontSize:10, fontWeight:700, color:"#444", letterSpacing:"0.1em" }}>
+            NEXT 60 DAYS — {upcoming.length} OPEN TASK{upcoming.length>1?"S":""}
+          </div>
+          <div style={{ display:"flex", flexDirection:"column" }}>
+            {upcoming.map((t,i) => {
+              const daysAway = Math.round((t.date - today) / 86400000);
+              const urgency  = daysAway <= 7 ? "#f97316" : daysAway <= 14 ? "#eab308" : "#555";
+              return (
+                <div key={i}
+                  onClick={() => onTaskClick(t.areaName)}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 16px", borderBottom: i<upcoming.length-1 ? "1px solid #141416" : "none", cursor:"pointer" }}
+                  onMouseEnter={e => e.currentTarget.style.background="#151518"}
+                  onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+                  <div style={{ width:44, flexShrink:0 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:urgency, lineHeight:1 }}>
+                      {t.date.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+                    </div>
+                    <div style={{ fontSize:9, color:"#333", marginTop:1 }}>
+                      {daysAway === 0 ? "today" : daysAway === 1 ? "tomorrow" : `${daysAway}d`}
+                    </div>
+                  </div>
+                  <div style={{ width:3, height:28, borderRadius:2, background:statusColor(t.status), flexShrink:0 }} />
+                  <div style={{ flex:1, overflow:"hidden" }}>
+                    <div style={{ fontSize:13, color:"#d0ccc8", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.label}</div>
+                    <div style={{ fontSize:10, color:"#444", marginTop:1 }}>{t.areaName}</div>
+                  </div>
+                  {t.assignees?.length > 0 && (
+                    <div style={{ display:"flex", gap:3, flexShrink:0 }}>
+                      {t.assignees.slice(0,2).map(n => {
+                        const hue = n.split("").reduce((a,c)=>a+c.charCodeAt(0),0) % 360;
+                        return <span key={n} title={n} style={{ width:20, height:20, borderRadius:"50%", background:`hsl(${hue},55%,25%)`, border:`1px solid hsl(${hue},55%,40%)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:700, color:`hsl(${hue},55%,65%)` }}>{n[0].toUpperCase()}</span>;
+                      })}
+                    </div>
+                  )}
+                  <span style={{ fontSize:10, color:"#2a2a2e", flexShrink:0 }}>→</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {Object.keys(tasksByDate).length === 0 && (
+        <div style={{ textAlign:"center", padding:"40px 0", color:"#333", fontSize:12, letterSpacing:"0.1em" }}>
+          NO DUE DATES SET YET
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Drag & Drop list ────────────────────────────────────────────────────────
+// Pointer-events based drag, no library needed.
+// Renders children as a reorderable list; calls onReorder(newItems) when dropped.
+function DragList({ items, onReorder, renderItem, gap=5 }) {
+  const [dragIdx, setDragIdx]   = useState(null);
+  const [overIdx, setOverIdx]   = useState(null);
+  const itemsRef                = useRef([]);
+  const containerRef            = useRef(null);
+
+  function handlePointerDown(e, idx) {
+    // Only trigger on the drag handle (data-drag="true")
+    if (!e.target.closest("[data-drag]")) return;
+    e.preventDefault();
+    setDragIdx(idx);
+    setOverIdx(idx);
+    containerRef.current?.setPointerCapture?.(e.pointerId);
+  }
+
+  function handlePointerMove(e) {
+    if (dragIdx === null) return;
+    // Find which item we're hovering over by comparing Y position
+    const els = itemsRef.current;
+    for (let i = 0; i < els.length; i++) {
+      if (!els[i]) continue;
+      const rect = els[i].getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        if (i !== overIdx) setOverIdx(i);
+        break;
+      }
+    }
+  }
+
+  function handlePointerUp() {
+    if (dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
+      const next = [...items];
+      const [moved] = next.splice(dragIdx, 1);
+      next.splice(overIdx, 0, moved);
+      onReorder(next);
+    }
+    setDragIdx(null);
+    setOverIdx(null);
+  }
+
+  const preview = dragIdx !== null ? (() => {
+    const next = [...items];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(overIdx, 0, moved);
+    return next;
+  })() : items;
+
+  return (
+    <div
+      ref={containerRef}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      style={{ display:"flex", flexDirection:"column", gap }}
+    >
+      {preview.map((item, i) => {
+        const origIdx = dragIdx !== null ? items.indexOf(item) : i;
+        const isDragging = origIdx === dragIdx;
+        return (
+          <div
+            key={item.id ?? item}
+            ref={el => itemsRef.current[i] = el}
+            onPointerDown={e => handlePointerDown(e, items.indexOf(item))}
+            style={{
+              opacity: isDragging ? 0.4 : 1,
+              transition: "opacity 0.15s",
+              outline: i === overIdx && dragIdx !== null && dragIdx !== overIdx ? "1px solid #333" : "none",
+              borderRadius: 10,
+            }}
+          >
+            {renderItem(item, isDragging)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaskRow({ task, onChange, onDelete, userName, allNames=[] }) {
   const [expanded, setExpanded] = useState(false);
   const st = TASK_STATUSES.find(s => s.id===task.status) ?? TASK_STATUSES[0];
+  const assignees = task.assignees ?? (task.owner ? [task.owner] : []);
   return (
     <div className="task-row" style={{ background:"#111113", borderRadius:10, border:`1px solid ${expanded?"#2a2a30":"#1e1e22"}`, overflow:"hidden", transition:"border-color 0.2s" }}>
       <div style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px" }}>
+        <div data-drag="true" title="Drag to reorder" style={{ cursor:"grab", color:"#2a2a2e", fontSize:14, flexShrink:0, lineHeight:1, padding:"0 2px", userSelect:"none" }}>⠿</div>
         <div style={{ width:8, height:8, borderRadius:"50%", flexShrink:0, background:st.color, boxShadow:task.status!=="not-started"?`0 0 5px ${st.color}66`:"none" }} />
         <span onClick={() => setExpanded(!expanded)} style={{ flex:1, fontSize:13, fontWeight:500, color:task.status==="done"?"#444":"#d0ccc8", textDecoration:task.status==="done"?"line-through":"none", cursor:"pointer", lineHeight:1.4 }}>{task.label}</span>
-        {task.owner && <span style={{ fontSize:10, color:"#666", background:"#1e1e22", padding:"2px 8px", borderRadius:20, flexShrink:0 }}>{task.owner}</span>}
+        <div style={{ display:"flex", gap:4, flexWrap:"wrap", maxWidth:160 }}>
+          {assignees.map(n => <AssigneeTag key={n} name={n} onTap={()=>{setSelectedPerson(n);setScreen("person-tasks");}} />)}
+        </div>
         {task.due && (() => { const ov=new Date(task.due)<new Date()&&task.status!=="done"; return <span style={{ fontSize:10, color:ov?"#ef4444":"#555", flexShrink:0 }}>{new Date(task.due).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</span>; })()}
         <StatusSelect value={task.status} onChange={v => onChange({ ...task, status:v, updated_by:userName })} />
         <button onClick={() => setExpanded(!expanded)} style={{ background:"none", border:"none", color:"#333", fontSize:10, cursor:"pointer", padding:"0 2px", transform:expanded?"rotate(180deg)":"none", transition:"transform 0.2s", flexShrink:0 }}>▼</button>
@@ -451,10 +963,7 @@ function TaskRow({ task, onChange, onDelete, userName }) {
       {expanded && (
         <div style={{ padding:"12px 14px 16px", display:"flex", flexDirection:"column", gap:10, borderTop:"1px solid #1a1a1e" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-            <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-              <label style={lbSt}>Owner</label>
-              <input value={task.owner} onChange={e => onChange({ ...task, owner:e.target.value })} placeholder="e.g. Angus" style={{ background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, color:"#f0ede8", padding:"7px 10px", fontSize:12 }} />
-            </div>
+            <AssigneeInput assignees={assignees} onChange={a => onChange({...task, assignees:a, owner:a[0]??""})} allNames={allNames} />
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={lbSt}>Due date</label>
               <input type="date" value={task.due} onChange={e => onChange({ ...task, due:e.target.value })} style={{ background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, color:task.due?"#f0ede8":"#555", padding:"7px 10px", fontSize:12 }} />
@@ -509,6 +1018,10 @@ async function exportReviewPDF({ festival, year, areas, reviewData, getCats }) {
         doc.text(`${rl.toUpperCase()} (${voteVals.length}v)`,W-m-bW/2-2,y+4,{align:"center"});
       }
       y+=8;
+      // Flatten comment arrays to plain text for PDF
+      const flatWW = Array.isArray(d.worked_well) ? d.worked_well.map(e=>`[${e.author??"Team"}] ${e.text}`).join("\n") : (d.worked_well??"");
+      const flatNI = Array.isArray(d.needs_improvement) ? d.needs_improvement.map(e=>`[${e.author??"Team"}] ${e.text}`).join("\n") : (d.needs_improvement??"");
+      const pdfD = {...d, worked_well: flatWW, needs_improvement: flatNI};
       for(const[key,prefix,col] of [["worked_well","+ ",[60,120,80]],["needs_improvement","^ ",[140,60,60]],["notes","# ",[60,80,140]]]){
         const txt=d[key]; if(!txt?.trim()) continue;
         chk(8); doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...col);
@@ -695,7 +1208,9 @@ export default function App() {
   const [taskSaving, setTaskSaving]   = useState({});
   const [loading, setLoading]         = useState(false);
   const [editingCats, setEditingCats] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState(null);
   const [mapView, setMapView]         = useState(false);
+  const [calView, setCalView]          = useState(false);
   const [newCatName, setNewCatName]   = useState("");
 
   // Identity
@@ -747,8 +1262,10 @@ export default function App() {
   const festivalAreas = isSupplier && supplierToken?.filter
     ? rawAreas.filter(a => slugify(a).includes(slugify(supplierToken.filter)))
     : rawAreas;
-  const nextTrackerYear = activeYear && !isTrackerYear(activeYear)
-    ? activeYears.filter(y=>isTrackerYear(y)).sort()[0] ?? null : null;
+  // If in review year → find next tracker year. If already in tracker year → use it (AI adds to current year).
+  const nextTrackerYear = activeYear
+    ? (isTrackerYear(activeYear) ? activeYear : (activeYears.filter(y=>isTrackerYear(y)).sort()[0] ?? null))
+    : null;
 
   // Load data
   useEffect(() => {
@@ -798,8 +1315,9 @@ export default function App() {
             try{ if(row.worked_well?.startsWith("__votes__")) votes=JSON.parse(row.worked_well.slice(9)); }catch(e){}
             map[`${aId}__${row.category_id}`]={
               votes,
-              worked_well:       row.worked_well?.startsWith("__votes__")?"":row.worked_well??"",
-              needs_improvement: row.needs_improvement??"",
+              worked_well:       row.worked_well?.startsWith("__votes__")?"":
+                               row.worked_well?.startsWith("__comments__")?JSON.parse(row.worked_well.slice(12)):(row.worked_well??""),
+              needs_improvement: row.needs_improvement?.startsWith("__comments__")?JSON.parse(row.needs_improvement.slice(12)):(row.needs_improvement??""),
               notes:             row.notes??"",
             };
           });
@@ -830,7 +1348,7 @@ export default function App() {
 
   // Tracker
   function trackerKey(fid,yr,did,aName){ return `${fid}__${yr}__${did}__${slugify(aName)}`; }
-  function getAreaTasks(did,aName,fid=activeFestival,yr=activeYear){ return trackerData[trackerKey(fid,yr,did,aName)]??getDefaultTasks(did,aName); }
+  function getAreaTasks(did,aName,fid=activeFestival,yr=activeYear){ return trackerData[trackerKey(fid,yr,did,aName)]??getDefaultTasks(did,aName,fid); }
   const saveTasksDebounced=useDebounce(async(aName,tasks)=>{
     const aId=slugify(aName),key=`${activeDept}__${aId}`;
     setTaskSaving(s=>({...s,[key]:true}));
@@ -846,7 +1364,7 @@ export default function App() {
   function addAISuggestion(aName,suggestion){
     if(!nextTrackerYear||!suggestion) return;
     const key=trackerKey(activeFestival,nextTrackerYear,activeDept,aName);
-    const existing=trackerData[key]??getDefaultTasks(activeDept,aName);
+    const existing=trackerData[key]??getDefaultTasks(activeDept,aName,activeFestival);
     if(existing.some(t=>t.label===suggestion)) return;
     const newTask={...makeTask(suggestion),notes:`AI suggestion from ${activeYear} review`};
     const updated=[...existing,newTask];
@@ -873,11 +1391,19 @@ export default function App() {
   }
 
   // Review helpers
-  function getCats(aName) { return areaCategories[`${activeFestival}__${activeDept}__${slugify(aName)}`]??(DEPT_REVIEW_CATS[activeDept]??[]); }
+  function getCats(aName) {
+    const saved = areaCategories[`${activeFestival}__${activeDept}__${slugify(aName)}`];
+    if (saved !== undefined) return saved;
+    // Preset areas get department defaults; custom areas start empty
+    const presetAreas = (DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept] ?? []).map(a => slugify(a));
+    return presetAreas.includes(slugify(aName)) ? (DEPT_REVIEW_CATS[activeDept] ?? []) : [];
+  }
   function getAvailableCats(aName) {
     const saved = areaAvailableCats[`${activeFestival}__${activeDept}__${slugify(aName)}`];
     if (saved) return saved;
-    return DEPT_REVIEW_CATS[activeDept] ?? [];
+    // Preset areas get the full department section pool; custom areas start empty
+    const presetAreas = (DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept] ?? []).map(a => slugify(a));
+    return presetAreas.includes(slugify(aName)) ? (DEPT_REVIEW_CATS[activeDept] ?? []) : [];
   }
   function saveAvailableCats(aName, pool) {
     setAreaAvailableCats(p=>({...p,[`${activeFestival}__${activeDept}__${slugify(aName)}`]:pool}));
@@ -913,10 +1439,15 @@ export default function App() {
     setSaveStatuses(s=>({...s,[key]:"saving"}));
     const voteVals=Object.values(patch.votes??{});
     const modeRating=voteVals.length>0?[1,2,3,4,5].map(v=>({v,c:voteVals.filter(x=>x===v).length})).reduce((a,b)=>b.c>a.c?b:a).v:null;
-    const wfField=Object.keys(patch.votes??{}).length>0?`__votes__${JSON.stringify(patch.votes)}`:(patch.worked_well??"");
+    const encodeField = (val) => {
+      if (Array.isArray(val)) return `__comments__${JSON.stringify(val)}`;
+      return val ?? "";
+    };
+    const wfField = Object.keys(patch.votes??{}).length>0 ? `__votes__${JSON.stringify(patch.votes)}` : encodeField(patch.worked_well);
+    const niField = encodeField(patch.needs_improvement);
     const{error}=await supabase.from("reviews").upsert({
       festival:activeFestival,year:activeYear,area_id:`${activeDept}__${aId}`,area_name:aName,area_emoji:activeDept,
-      category_id:catId,rating:modeRating,worked_well:wfField,needs_improvement:patch.needs_improvement??"",notes:patch.notes??"",updated_at:new Date().toISOString(),
+      category_id:catId,rating:modeRating,worked_well:wfField,needs_improvement:niField,notes:patch.notes??"",updated_at:new Date().toISOString(),
     },{onConflict:"festival,year,area_id,category_id"});
     setSaveStatuses(s=>({...s,[key]:error?"error":"saved"}));
     if(!error) setReviewData(p=>({...p,[key]:patch}));
@@ -1093,6 +1624,14 @@ export default function App() {
     </div></>
   );
 
+  // All unique assignee names across this dept/year (needed by areas + person screens)
+  const allAssigneeNames = [...new Set(
+    Object.entries(trackerData)
+      .filter(([k]) => k.startsWith(`${activeFestival}__${activeYear}__${activeDept}__`))
+      .flatMap(([,tasks]) => tasks.flatMap(t => t.assignees?.length ? t.assignees : (t.owner ? [t.owner] : [])))
+      .filter(Boolean)
+  )];
+
   // ── SCREEN: Areas ─────────────────────────────────────────────────────────
   if(screen==="areas") return(
     <><style>{css}</style>
@@ -1112,13 +1651,27 @@ export default function App() {
             <div style={{fontSize:13,color:"#555"}}>{festivalAreas.length} areas · {activeYear} · {tracker?"Progress Tracker":"Review"}{isSupplier&&supplierToken?.filter?` · ${supplierToken.filter}`:""}</div>
           </div>
           <div style={{display:"flex",gap:8,marginTop:6,flexShrink:0}}>
-            {!isSupplier&&festival?.id==="gottwood"&&(
+            {!isSupplier&&tracker&&allAssigneeNames.length>0&&(
+              <button onClick={()=>setScreen("person-tasks")}
+                style={{background:"transparent",border:"1px solid #252528",borderRadius:8,color:"#555",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.06em",whiteSpace:"nowrap"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                👤 People
+              </button>
+            )}
+            {!isSupplier&&tracker&&(
+              <button onClick={()=>{setCalView(v=>!v);setMapView(false);}}
+                style={{background:calView?"#f0ede811":"transparent",border:`1px solid ${calView?"#888":"#252528"}`,borderRadius:8,color:calView?"#f0ede8":"#555",fontSize:11,fontWeight:700,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.08em",whiteSpace:"nowrap",transition:"all 0.15s"}}>
+                {calView?"☰ LIST":"📅 CAL"}
+              </button>
+            )}
+            {!isSupplier&&festival?.id==="gottwood"&&!calView&&(
               <button onClick={()=>setMapView(v=>!v)}
                 style={{background:mapView?"#f0ede811":"transparent",border:`1px solid ${mapView?"#888":"#252528"}`,borderRadius:8,color:mapView?"#f0ede8":"#555",fontSize:11,fontWeight:700,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.08em",whiteSpace:"nowrap",transition:"all 0.15s"}}>
                 {mapView?"☰ LIST":"▦ MAP"}
               </button>
             )}
-            {!isSupplier&&!mapView&&(
+            {!isSupplier&&!mapView&&!calView&&(
               <button onClick={()=>updateAreas(prev=>[...prev].sort((a,b)=>a.localeCompare(b)))}
                 style={{background:"transparent",border:"1px solid #252528",borderRadius:8,color:"#555",fontSize:11,fontWeight:600,padding:"6px 14px",cursor:"pointer",letterSpacing:"0.06em",whiteSpace:"nowrap"}}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
@@ -1147,6 +1700,22 @@ export default function App() {
             })()}
           </div>
         )}
+        {calView&&tracker&&(
+          <div style={{marginBottom:16}}>
+            <TrackerCalendar
+              areas={festivalAreas}
+              getAreaTasks={getAreaTasks}
+              activeDept={activeDept}
+              activeFestival={activeFestival}
+              activeYear={activeYear}
+              onTaskClick={areaName=>{
+                setSelectedArea(areaName);
+                setScreen("area-detail");
+                setEditingCats(false);
+              }}
+            />
+          </div>
+        )}
         {mapView&&festival?.id==="gottwood"&&(
           <div style={{marginBottom:16}}>
             <SiteMap
@@ -1164,7 +1733,7 @@ export default function App() {
             />
           </div>
         )}
-        {loading?(<div style={{textAlign:"center",padding:60,color:"#444",fontSize:12,letterSpacing:"0.1em"}}>LOADING…</div>):(
+        {!calView&&loading?(<div style={{textAlign:"center",padding:60,color:"#444",fontSize:12,letterSpacing:"0.1em"}}>LOADING…</div>):!calView&&(
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {festivalAreas.map(areaName=>{
               const color=tracker?areaRAGColor(areaName):areaReviewColor(areaName);
@@ -1184,9 +1753,10 @@ export default function App() {
             })}
             {!isSupplier&&<AddRow placeholder="Area name..." onAdd={name=>{
               updateAreas(prev=>[...prev,name]);
-              // Immediately save default cats + available pool for the new area
-              const defaultCats=DEPT_REVIEW_CATS[activeDept]??[];
               const aId=slugify(name);
+              // Preset areas get default sections; custom areas start blank
+              const presetSlugs=(DEFAULT_DEPT_AREAS[activeFestival]?.[activeDept]??[]).map(a=>slugify(a));
+              const defaultCats=presetSlugs.includes(aId)?(DEPT_REVIEW_CATS[activeDept]??[]):[];
               supabase.from("reviews").upsert({festival:activeFestival,year:activeYear,area_id:`${activeDept}__${aId}`,area_name:name,area_emoji:activeDept,category_id:"__cats__",rating:null,worked_well:"",needs_improvement:"",notes:JSON.stringify(defaultCats),updated_at:new Date().toISOString()},{onConflict:"festival,year,area_id,category_id"});
               supabase.from("reviews").upsert({festival:activeFestival,year:activeYear,area_id:`${activeDept}__${aId}`,area_name:name,area_emoji:activeDept,category_id:"__available_cats__",rating:null,worked_well:"",needs_improvement:"",notes:JSON.stringify(defaultCats),updated_at:new Date().toISOString()},{onConflict:"festival,year,area_id,category_id"});
             }}/>}
@@ -1195,6 +1765,135 @@ export default function App() {
       </div>
     </div></>
   );
+
+  // ── SCREEN: Person tasks ─────────────────────────────────────────────────
+  if(screen==="person-tasks") {
+    // Gather all tasks across all areas for this dept/year, grouped by area
+    const personAreaGroups = festivalAreas
+      .map(areaName => ({
+        areaName,
+        tasks: getAreaTasks(activeDept, areaName).filter(t => {
+          const a = t.assignees?.length ? t.assignees : (t.owner ? [t.owner] : []);
+          return !selectedPerson || a.includes(selectedPerson);
+        })
+      }))
+      .filter(g => g.tasks.length > 0);
+
+    const totalTasks = personAreaGroups.reduce((s,g) => s+g.tasks.length, 0);
+    const doneTasks  = personAreaGroups.reduce((s,g) => s+g.tasks.filter(t=>t.status==="done").length, 0);
+    const blockedTasks = personAreaGroups.reduce((s,g) => s+g.tasks.filter(t=>t.status==="blocked").length, 0);
+
+    // All people for the people-picker tabs
+    const people = ["All", ...allAssigneeNames];
+
+    return (
+      <><style>{css}</style>
+      <div className="screen" style={{minHeight:"100vh",background:"#0a0a0a"}}>
+        <PageHeader>
+          <BackBtn onClick={()=>setScreen("areas")}/>
+          <FestivalLogo festival={festival} size={34}/>
+          <div style={{flex:1}}/>
+          <ModeBadge tracker={tracker}/>
+        </PageHeader>
+        <div style={{maxWidth:700,margin:"0 auto",padding:"28px 20px 80px"}}>
+
+          {/* Title */}
+          <div style={{marginBottom:22}}>
+            <div style={{fontWeight:800,fontSize:24,color:"#f0ede8",marginBottom:4}}>
+              {selectedPerson ? selectedPerson : "All People"}
+            </div>
+            <div style={{fontSize:13,color:"#555"}}>
+              {dept?.name} · {activeYear} · {totalTasks} task{totalTasks!==1?"s":""}{doneTasks>0?` · ${doneTasks} done`:""}
+              {blockedTasks>0&&<span style={{color:"#ef4444"}}> · {blockedTasks} blocked</span>}
+            </div>
+          </div>
+
+          {/* Person picker tabs */}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:22}}>
+            {people.map(p => {
+              const isActive = p==="All" ? !selectedPerson : selectedPerson===p;
+              const hue = p==="All" ? null : p.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+              const col = hue!=null ? `hsl(${hue},55%,65%)` : "#f0ede8";
+              return (
+                <button key={p}
+                  onClick={()=>setSelectedPerson(p==="All"?null:p)}
+                  style={{
+                    display:"flex",alignItems:"center",gap:6,
+                    background:isActive?(hue!=null?`hsl(${hue},55%,14%)`:"#1e1e22"):"transparent",
+                    border:`1px solid ${isActive?(hue!=null?`hsl(${hue},55%,28%)`:"#444"):"#252528"}`,
+                    borderRadius:20,padding:"5px 12px 5px 8px",
+                    color:isActive?col:"#555",fontSize:12,fontWeight:600,cursor:"pointer",
+                    transition:"all 0.15s"
+                  }}>
+                  {p!=="All"&&(
+                    <span style={{width:18,height:18,borderRadius:"50%",background:`hsl(${hue},55%,25%)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:`hsl(${hue},55%,65%)`}}>
+                      {p.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2)}
+                    </span>
+                  )}
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Task groups by area */}
+          {personAreaGroups.length===0 ? (
+            <div style={{textAlign:"center",padding:"60px 20px",color:"#333",fontSize:13}}>
+              {selectedPerson ? `No tasks assigned to ${selectedPerson}` : "No assigned tasks yet"}
+            </div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:20}}>
+              {personAreaGroups.map(({areaName,tasks})=>{
+                const done    = tasks.filter(t=>t.status==="done").length;
+                const blocked = tasks.filter(t=>t.status==="blocked").length;
+                const pct     = tasks.length>0?Math.round(done/tasks.length*100):0;
+                const rc      = blocked>0?"#ef4444":pct===100?"#22c55e":pct>0?"#eab308":"#3a3a3e";
+                return (
+                  <div key={areaName} style={{background:"#111113",border:"1px solid #1e1e22",borderRadius:12,overflow:"hidden"}}>
+                    {/* Area header */}
+                    <div style={{padding:"12px 16px",borderBottom:"1px solid #1a1a1e",display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}
+                      onClick={()=>{setSelectedArea(areaName);setScreen("area-detail");}}>
+                      <span style={{flex:1,fontWeight:700,fontSize:14,color:"#d0ccc8"}}>{areaName}</span>
+                      <span style={{fontSize:11,color:"#555"}}>{done}/{tasks.length}</span>
+                      <div style={{width:48,height:3,background:"#1e1e22",borderRadius:2,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${pct}%`,background:rc,borderRadius:2}}/>
+                      </div>
+                      <span style={{fontSize:11,color:"#333"}}>→</span>
+                    </div>
+                    {/* Tasks */}
+                    <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                      {tasks.map(task=>{
+                        const st=TASK_STATUSES.find(s=>s.id===task.status)??TASK_STATUSES[0];
+                        const assignees=task.assignees?.length?task.assignees:(task.owner?[task.owner]:[]);
+                        const ov=task.due&&new Date(task.due)<new Date()&&task.status!=="done";
+                        return(
+                          <div key={task.id}
+                            onClick={()=>{setSelectedArea(areaName);setScreen("area-detail");}}
+                            style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",background:"#0d0d10",borderRadius:8,border:"1px solid #1a1a1e",cursor:"pointer"}}
+                            onMouseEnter={e=>e.currentTarget.style.borderColor="#2a2a30"}
+                            onMouseLeave={e=>e.currentTarget.style.borderColor="#1a1a1e"}>
+                            <div style={{width:7,height:7,borderRadius:"50%",flexShrink:0,background:st.color,boxShadow:task.status!=="not-started"?`0 0 5px ${st.color}66`:"none"}}/>
+                            <span style={{flex:1,fontSize:13,color:task.status==="done"?"#444":"#d0ccc8",textDecoration:task.status==="done"?"line-through":"none",lineHeight:1.4}}>{task.label}</span>
+                            {assignees.filter(n=>n!==selectedPerson).map(n=><AssigneeTag key={n} name={n} onTap={()=>setSelectedPerson(n)}/>)}
+                            {task.due&&<span style={{fontSize:10,color:ov?"#ef4444":"#555",flexShrink:0,whiteSpace:"nowrap"}}>{new Date(task.due).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</span>}
+                            <StatusSelect value={task.status} onChange={v=>{
+                              const updated=getAreaTasks(activeDept,areaName).map(t=>t.id===task.id?{...t,status:v,updated_by:userName}:t);
+                              setAreaTasks(areaName,updated);
+                            }}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+      </>
+    );
+  }
 
   // ── SCREEN: Area detail ───────────────────────────────────────────────────
   const cats=getCats(selectedArea);
@@ -1239,16 +1938,24 @@ export default function App() {
                 <button onClick={()=>copyTasksFromYear(prevYear,selectedArea)} style={{background:"#eab308",color:"#0a0a0a",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>Copy from {prevYear}</button>
               </div>
             )}
-            {[{id:"blocked",label:"Blocked"},{id:"in-progress",label:"In Progress"},{id:"not-started",label:"Not Started"},{id:"done",label:"Done"}].map(group=>{
-              const grouped=areaTasks.filter(t=>t.status===group.id); if(!grouped.length) return null;
-              const st=TASK_STATUSES.find(s=>s.id===group.id);
-              return(<div key={group.id}>
-                <div style={{fontSize:10,fontWeight:700,color:st.color,letterSpacing:"0.1em",marginBottom:6}}>{group.label.toUpperCase()} — {grouped.length}</div>
-                <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                  {grouped.map(task=>(<TaskRow key={task.id} task={task} userName={userName} onChange={updated=>setAreaTasks(selectedArea,areaTasks.map(t=>t.id===task.id?{...updated,updated_by:userName}:t))} onDelete={()=>setAreaTasks(selectedArea,areaTasks.filter(t=>t.id!==task.id))}/>))}
-                </div>
-              </div>);
-            })}
+            <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:8}}>
+              <button onClick={()=>setAreaTasks(selectedArea,[...areaTasks].sort((a,b)=>a.label.localeCompare(b.label)))} style={{background:"transparent",border:"1px solid #252528",borderRadius:7,color:"#555",fontSize:11,fontWeight:600,padding:"5px 12px",cursor:"pointer",letterSpacing:"0.05em"}}
+                onMouseEnter={e=>{e.currentTarget.style.color="#f0ede8";e.currentTarget.style.borderColor="#444";}} onMouseLeave={e=>{e.currentTarget.style.color="#555";e.currentTarget.style.borderColor="#252528";}}>A → Z</button>
+            </div>
+            <DragList
+              items={areaTasks}
+              onReorder={newTasks=>setAreaTasks(selectedArea,newTasks)}
+              gap={5}
+              renderItem={(task)=>{
+                const st=TASK_STATUSES.find(s=>s.id===task.status);
+                return(
+                  <div>
+                    <div style={{fontSize:9,fontWeight:700,color:st?.color??"#3a3a3e",letterSpacing:"0.1em",marginBottom:3,paddingLeft:2,opacity:0.7}}>{st?.label?.toUpperCase()}</div>
+                    <TaskRow task={task} userName={userName} allNames={allAssigneeNames} onChange={updated=>setAreaTasks(selectedArea,areaTasks.map(t=>t.id===task.id?{...updated,updated_by:userName}:t))} onDelete={()=>setAreaTasks(selectedArea,areaTasks.filter(t=>t.id!==task.id))}/>
+                  </div>
+                );
+              }}
+            />
             <AddRow placeholder="Add a task..." onAdd={label=>setAreaTasks(selectedArea,[...areaTasks,makeTask(label)])}/>
           </div>
         )}
@@ -1279,15 +1986,24 @@ export default function App() {
               </div>
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {cats.map(cat=>{
-                  const key=`${areaId}__${slugify(cat)}`;
-                  return(<ReviewSection key={key} catName={cat} data={reviewData[key]} saveKey={key} saveStatuses={saveStatuses}
-                    userName={userName} isSupplier={isSupplier} nextYear={nextTrackerYear} areaName={selectedArea}
-                    onSave={patch=>handleSave(selectedArea,cat,patch)}
-                    onRemove={()=>setCats(selectedArea,cats.filter(c=>c!==cat))}
-                    onAISuggestion={suggestion=>addAISuggestion(selectedArea,suggestion)}
-                  />);
-                })}
+                {!isSupplier&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:2}}>
+                  <button onClick={()=>setCats(selectedArea,[...cats].sort((a,b)=>a.localeCompare(b)))} style={{background:"transparent",border:"1px solid #252528",borderRadius:7,color:"#555",fontSize:11,fontWeight:600,padding:"5px 12px",cursor:"pointer",letterSpacing:"0.05em"}}
+                    onMouseEnter={e=>{e.currentTarget.style.color="#f0ede8";e.currentTarget.style.borderColor="#444";}} onMouseLeave={e=>{e.currentTarget.style.color="#555";e.currentTarget.style.borderColor="#252528";}}>A → Z</button>
+                </div>}
+                <DragList
+                  items={cats.map(c=>({id:c,name:c}))}
+                  onReorder={reordered=>setCats(selectedArea,reordered.map(x=>x.name))}
+                  gap={10}
+                  renderItem={({name:cat})=>{
+                    const key=`${areaId}__${slugify(cat)}`;
+                    return(<ReviewSection key={key} catName={cat} data={reviewData[key]} saveKey={key} saveStatuses={saveStatuses}
+                      userName={userName} isSupplier={isSupplier} nextYear={nextTrackerYear} areaName={selectedArea}
+                      onSave={patch=>handleSave(selectedArea,cat,patch)}
+                      onRemove={()=>setCats(selectedArea,cats.filter(c=>c!==cat))}
+                      onAISuggestion={suggestion=>addAISuggestion(selectedArea,suggestion)}
+                    />);
+                  }}
+                />
                 {!isSupplier&&<AddRow placeholder="Add a section..." onAdd={n=>{
                   const pool=getAvailableCats(selectedArea);
                   if(!pool.includes(n)) saveAvailableCats(selectedArea,[...pool,n]);
