@@ -1691,12 +1691,18 @@ export default function App() {
     let toSave;
     setEventDepts(p => {
       const current = p[fid];
-      // Migrate old array format to year-keyed object on first edit
-      const raw = Array.isArray(current) ? {} : (current ?? {});
-      // Migrate data previously saved under null key (when year wasn't selected)
-      const existing = (raw[year] === undefined && raw["null"])
-        ? { ...raw, [year]: raw["null"] }
-        : raw;
+      let existing;
+      if (!current || Array.isArray(current)) {
+        // No data yet, or old flat-array format — use it as the base for this year
+        // (previously this discarded the array and fell back to DEFAULT_DEPTS, causing
+        //  all removed departments to reappear on the next delete)
+        existing = { [year]: current ?? DEFAULT_DEPTS };
+      } else {
+        // New year-keyed format — migrate "null" key if present
+        existing = (current[year] === undefined && current["null"])
+          ? { ...current, [year]: current["null"] }
+          : current;
+      }
       const yearDepts = existing[year] ?? DEFAULT_DEPTS;
       const next = typeof fn === "function" ? fn(yearDepts) : fn;
       toSave = { ...existing, [year]: next };
