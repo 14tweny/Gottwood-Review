@@ -32,6 +32,9 @@ create table reviews (
 
 alter table reviews enable row level security;
 create policy "Public read/write" on reviews for all using (true) with check (true);
+
+-- Required for live sync across devices (Supabase Realtime)
+alter publication supabase_realtime add table reviews;
 ```
 
 ---

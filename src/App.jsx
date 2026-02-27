@@ -1636,6 +1636,27 @@ export default function App() {
       });
   }, [activeFestival]);
 
+  // Poll config every 5s — ensures depts/years/roster stay in sync across
+  // devices even when Supabase Realtime isn't enabled on the table.
+  useEffect(() => {
+    if (!activeFestival) return;
+    const fid = activeFestival;
+    function fetchConfig() {
+      supabase.from("reviews").select("category_id,notes").eq("festival", fid).eq("year", "__config__")
+        .then(({ data }) => {
+          if (!data) return;
+          const yearsRow  = data.find(r => r.category_id === "__years__");
+          const deptsRow  = data.find(r => r.category_id === "__depts__");
+          const rosterRow = data.find(r => r.category_id === "__roster__");
+          if (yearsRow)  { try { const y=JSON.parse(yearsRow.notes);  if(Array.isArray(y)) setEventYears(p=>({...p,[fid]:y})); } catch(e) {} }
+          if (deptsRow)  { try { const d=JSON.parse(deptsRow.notes);  if(d&&(Array.isArray(d)||typeof d==="object")) setEventDepts(p=>({...p,[fid]:d})); } catch(e) {} }
+          if (rosterRow) { try { const r=JSON.parse(rosterRow.notes); if(Array.isArray(r)) setRosters(p=>({...p,[fid]:r})); } catch(e) {} }
+        });
+    }
+    const id = setInterval(fetchConfig, 5000);
+    return () => clearInterval(id);
+  }, [activeFestival]);
+
   // Real-time subscription — all data for the active festival synced instantly
   useEffect(() => {
     if (!activeFestival) return;
@@ -1778,6 +1799,7 @@ export default function App() {
   const [trackerData, setTrackerData]         = useState({});
   const [taskSaving, setTaskSaving]           = useState({});
   const [loading, setLoading]                 = useState(false);
+  const [dataRefreshKey, setDataRefreshKey]   = useState(0);
   const [editingCats, setEditingCats]         = useState(false);
   const [newCatName, setNewCatName]           = useState("");
 
@@ -1976,7 +1998,7 @@ export default function App() {
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeFestival || !activeDept || !activeYear) return;
-    setLoading(true);
+    if (dataRefreshKey === 0) setLoading(true); // spinner only on first load, not background polls
     supabase.from("reviews").select("*").eq("festival", activeFestival).eq("year", activeYear)
       .then(({ data, error }) => {
         if (!error && data) {
@@ -2044,7 +2066,16 @@ export default function App() {
         }
         setLoading(false);
       }).catch(() => setLoading(false));
-  }, [activeFestival, activeYear, activeDept]);
+  }, [activeFestival, activeYear, activeDept, dataRefreshKey]);
+
+  // Poll review/tracker data every 15s + re-fetch instantly when tab regains focus
+  useEffect(() => {
+    const bump = () => setDataRefreshKey(k => k + 1);
+    const onVisible = () => { if (document.visibilityState === "visible") bump(); };
+    const id = setInterval(bump, 15000);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, []);
 
   // ── Area list ─────────────────────────────────────────────────────────────
   async function saveAreasToDB(newList) {
