@@ -334,6 +334,53 @@ async function exportReviewPDF({ festival, year, areas, reviewData, getCats }) {
   doc.save(`${slugify(festival.name)}-${year}-review.pdf`);
 }
 
+async function exportTagReviewPDF({ festival, year, dept, tag, tagAreaGroups, reviewData }) {
+  await loadJsPDF();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
+  const W=210,H=297,m=16,cW=W-m*2; let y=m;
+  const RC={1:[239,68,68],2:[249,115,22],3:[234,179,8],4:[132,204,18],5:[34,197,94]};
+  const chk=(n=10)=>{ if(y+n>H-m){doc.addPage();y=m;} };
+  doc.setFillColor(10,10,10); doc.rect(0,0,W,36,"F");
+  doc.setFont("helvetica","bold"); doc.setFontSize(18); doc.setTextColor(240,237,232); doc.text("PRODUCTION REVIEW",m,16);
+  doc.setFontSize(10); doc.setFont("helvetica","normal"); doc.setTextColor(100,100,110);
+  doc.text(`${festival.name.toUpperCase()}  ·  ${year}  ·  #${tag}`,m,25);
+  doc.setFontSize(8); doc.text(`Generated ${new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}`,W-m,25,{align:"right"});
+  if (dept) { doc.setFontSize(8); doc.setTextColor(80,80,90); doc.text(dept.name.toUpperCase(),W-m,16,{align:"right"}); }
+  y=46;
+  for (const { areaName, sections } of tagAreaGroups) {
+    if (!sections.length) continue;
+    chk(20); doc.setFillColor(20,20,24); doc.roundedRect(m,y,cW,10,2,2,"F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(11); doc.setTextColor(240,237,232); doc.text(areaName.toUpperCase(),m+4,y+6.8); y+=14;
+    for (const { cat, data: d } of sections) {
+      if (!d) continue;
+      const voteVals=Object.values(d.votes??{});
+      chk(14); doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(180,176,170); doc.text(cat,m+2,y+4);
+      if(voteVals.length>0){
+        const mV=[1,2,3,4,5].map(v=>({v,c:voteVals.filter(x=>x===v).length})).reduce((a,b)=>b.c>a.c?b:a).v;
+        const rl=REVIEW_RATINGS.find(r=>r.value===mV)?.label??""; const rc=RC[mV]??[100,100,100];
+        doc.setFillColor(...rc.map(c=>Math.round(c*0.15+10))); doc.setDrawColor(...rc); doc.setLineWidth(0.3);
+        const bW=doc.getTextWidth(`${rl} (${voteVals.length}v)`)+6;
+        doc.roundedRect(W-m-bW-2,y,bW,6,1,1,"FD"); doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(...rc);
+        doc.text(`${rl.toUpperCase()} (${voteVals.length}v)`,W-m-bW/2-2,y+4,{align:"center"});
+      }
+      y+=8;
+      for(const[key,prefix,col] of [["worked_well","+ ",[60,120,80]],["needs_improvement","^ ",[140,60,60]],["notes","# ",[60,80,140]]]){
+        const val=d[key]; if(!val) continue;
+        const txt=Array.isArray(val)?val.map(e=>`[${e.author??"Team"}] ${e.text}`).join("\n"):val;
+        if(!txt?.trim()) continue;
+        chk(8); doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(...col);
+        const lines=doc.splitTextToSize(prefix+txt,cW-6); doc.text(lines,m+4,y+3); y+=lines.length*4.5+2;
+      }
+      doc.setDrawColor(30,30,34); doc.setLineWidth(0.15); doc.line(m+2,y,W-m-2,y); y+=4;
+    }
+    y+=4;
+  }
+  const tp=doc.getNumberOfPages();
+  for(let i=1;i<=tp;i++){doc.setPage(i);doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(60,60,70);doc.text(`${festival.name} · ${year} · #${tag}`,m,H-8);doc.text(`${i}/${tp}`,W-m,H-8,{align:"right"});}
+  doc.save(`${slugify(festival.name)}-${year}-${slugify(tag)}-review.pdf`);
+}
+
 async function exportTrackerPDF({ festival, year, depts, allAreas, getAreaTasks }) {
   await loadJsPDF();
   const { jsPDF } = window.jspdf;
@@ -1075,7 +1122,7 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
           )}
           <span style={{ color:"#333", fontSize:12, transform:open?"rotate(180deg)":"none", transition:"transform 0.2s", display:"inline-block", marginLeft:4 }}>▼</span>
         </button>
-        {!isSupplier && (
+        {!isSupplier && onRemove && (
           <button className="del-btn" onClick={onRemove} title="Remove section"
             style={{ background:"none", border:"none", borderLeft:"1px solid #1e1e22", color:"#2a2a2e", fontSize:14, cursor:"pointer", padding:"0 14px", flexShrink:0, transition:"color 0.12s, background 0.12s" }}>✕</button>
         )}
@@ -2942,18 +2989,28 @@ export default function App() {
             <ModeBadge tracker={tracker}/>
           </PageHeader>
           <div style={{ maxWidth:700, margin:"0 auto", padding:"28px 20px 80px" }}>
-            <div style={{ marginBottom:22 }}>
-              <div style={{ fontWeight:800, fontSize:24, color:"#f0ede8", marginBottom:4 }}>
-                {selectedTag ? (
-                  <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
-                    <TagBadge tag={selectedTag} />
-                    <span>reviews</span>
-                  </span>
-                ) : "All Tags"}
+            <div style={{ marginBottom:22, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
+              <div>
+                <div style={{ fontWeight:800, fontSize:24, color:"#f0ede8", marginBottom:4 }}>
+                  {selectedTag ? (
+                    <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                      <TagBadge tag={selectedTag} />
+                      <span>reviews</span>
+                    </span>
+                  ) : "All Tags"}
+                </div>
+                <div style={{ fontSize:13, color:"#555" }}>
+                  {dept?.name} · {activeYear} · {totalSections} section{totalSections!==1?"s":""}
+                </div>
               </div>
-              <div style={{ fontSize:13, color:"#555" }}>
-                {dept?.name} · {activeYear} · {totalSections} section{totalSections!==1?"s":""}
-              </div>
+              {selectedTag && totalSections > 0 && (
+                <button onClick={()=>exportTagReviewPDF({ festival, year:activeYear, dept, tag:selectedTag, tagAreaGroups, reviewData })}
+                  style={{ flexShrink:0, marginTop:4, background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"7px 14px", cursor:"pointer", letterSpacing:"0.06em", display:"flex", alignItems:"center", gap:6, transition:"all 0.15s" }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                  <span style={{ fontSize:14 }}>↓</span> PDF
+                </button>
+              )}
             </div>
 
             {/* Tag filter pills */}
@@ -2982,32 +3039,30 @@ export default function App() {
                   const rc = areaReviewColor(areaName) ?? "#3a3a3e";
                   return (
                     <div key={areaName} style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:12, overflow:"hidden" }}>
-                      <div style={{ padding:"12px 16px", borderBottom:"1px solid #1a1a1e", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
-                        onClick={()=>{ setSelectedArea(areaName); setScreen("area-detail"); }}>
+                      <div style={{ padding:"12px 16px", borderBottom:"1px solid #1a1a1e", display:"flex", alignItems:"center", gap:10 }}>
                         <span style={{ flex:1, fontWeight:700, fontSize:14, color:"#d0ccc8" }}>{areaName}</span>
                         <span style={{ fontSize:11, color:"#555" }}>{rated}/{total} rated</span>
                         <div style={{ width:48, height:3, background:"#1e1e22", borderRadius:2, overflow:"hidden" }}>
                           <div style={{ height:"100%", width:`${total>0?Math.round(rated/total*100):0}%`, background:rc, borderRadius:2 }}/>
                         </div>
-                        <span style={{ fontSize:11, color:"#333" }}>→</span>
+                        <button onClick={()=>{ setSelectedArea(areaName); setScreen("area-detail"); }}
+                          style={{ background:"none", border:"1px solid #252528", borderRadius:6, color:"#555", fontSize:10, fontWeight:600, padding:"4px 10px", cursor:"pointer", letterSpacing:"0.06em", flexShrink:0 }}
+                          onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
+                          onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
+                          FULL AREA →
+                        </button>
                       </div>
-                      <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:6 }}>
-                        {sections.map(({ cat, data: sd }) => {
-                          const votes     = sd?.votes ?? {};
-                          const allVals   = Object.values(votes);
-                          const modeVal   = allVals.length>0 ? [1,2,3,4,5].map(v=>({v,c:allVals.filter(x=>x===v).length})).reduce((a,b)=>b.c>a.c?b:a).v : null;
-                          const modeRat   = modeVal ? getRating(modeVal) : null;
-                          const sectionTags = (sd?.tags ?? []).filter(t => t !== selectedTag);
+                      <div style={{ padding:"10px 12px", display:"flex", flexDirection:"column", gap:8 }}>
+                        {sections.map(({ cat }) => {
+                          const k = keys.review(areaName, cat);
                           return (
-                            <div key={cat} onClick={()=>{ setSelectedArea(areaName); setScreen("area-detail"); }}
-                              style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 10px", background:"#0d0d10", borderRadius:8, border:"1px solid #1a1a1e", cursor:"pointer" }}
-                              onMouseEnter={e=>e.currentTarget.style.borderColor="#2a2a30"}
-                              onMouseLeave={e=>e.currentTarget.style.borderColor="#1a1a1e"}>
-                              <div style={{ width:7, height:7, borderRadius:"50%", flexShrink:0, background:modeRat?modeRat.color:"#2a2a2e", boxShadow:modeRat?`0 0 5px ${modeRat.color}66`:"none" }}/>
-                              <span style={{ flex:1, fontSize:13, color:"#d0ccc8", lineHeight:1.4 }}>{cat}</span>
-                              {modeRat && <span style={{ fontSize:10, fontWeight:700, color:modeRat.color, letterSpacing:"0.06em", flexShrink:0 }}>{modeRat.label.toUpperCase()} · {allVals.length}v</span>}
-                              {sectionTags.map(t=><TagBadge key={t} tag={t} onTap={()=>setSelectedTag(t)}/>)}
-                            </div>
+                            <ReviewSection key={k} catName={cat} data={reviewData[k]} saveKey={k} saveStatuses={saveStatuses}
+                              userName={userName} isSupplier={isSupplier} nextYear={nextTrackerYear} areaName={areaName}
+                              onSave={patch=>handleSave(areaName, cat, patch)}
+                              onAISuggestion={suggestion=>addAISuggestion(areaName, suggestion)}
+                              allReviewTags={allReviewTagNames}
+                              onTagTap={tag=>setSelectedTag(tag)}
+                            />
                           );
                         })}
                       </div>
