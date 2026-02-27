@@ -99,6 +99,34 @@ const REVIEW_RATINGS = [
   { value: 5, label: "Excellent",  color: "#22c55e" },
 ];
 
+// Curated palette — visually distinct, all work on dark backgrounds.
+// Stored as hsl so we can derive bg/border from the same value.
+const TEAM_COLORS = [
+  { id: "violet",   hex: "#a78bfa", bg: "#a78bfa18", border: "#a78bfa40" },
+  { id: "cyan",     hex: "#22d3ee", bg: "#22d3ee18", border: "#22d3ee40" },
+  { id: "rose",     hex: "#fb7185", bg: "#fb718518", border: "#fb718540" },
+  { id: "amber",    hex: "#fbbf24", bg: "#fbbf2418", border: "#fbbf2440" },
+  { id: "emerald",  hex: "#34d399", bg: "#34d39918", border: "#34d39940" },
+  { id: "sky",      hex: "#60a5fa", bg: "#60a5fa18", border: "#60a5fa40" },
+  { id: "orange",   hex: "#fb923c", bg: "#fb923c18", border: "#fb923c40" },
+  { id: "pink",     hex: "#f472b6", bg: "#f472b618", border: "#f472b640" },
+  { id: "teal",     hex: "#2dd4bf", bg: "#2dd4bf18", border: "#2dd4bf40" },
+  { id: "lime",     hex: "#a3e635", bg: "#a3e63518", border: "#a3e63540" },
+  { id: "indigo",   hex: "#818cf8", bg: "#818cf818", border: "#818cf840" },
+  { id: "fuchsia",  hex: "#e879f9", bg: "#e879f918", border: "#e879f940" },
+  { id: "red",      hex: "#f87171", bg: "#f8717118", border: "#f8717140" },
+  { id: "yellow",   hex: "#facc15", bg: "#facc1518", border: "#facc1540" },
+  { id: "green",    hex: "#4ade80", bg: "#4ade8018", border: "#4ade8040" },
+  { id: "blue",     hex: "#38bdf8", bg: "#38bdf818", border: "#38bdf840" },
+];
+
+// Pick the next colour not already used by existing roster members
+function pickNextColor(roster) {
+  const usedIds = new Set(roster.map(m => m.colorId));
+  const free = TEAM_COLORS.find(c => !usedIds.has(c.id));
+  return free ?? TEAM_COLORS[roster.length % TEAM_COLORS.length];
+}
+
 // ─── Key helpers ──────────────────────────────────────────────────────────────
 
 const keys = {
@@ -472,23 +500,39 @@ function DragList({ items, onReorder, renderItem, gap = 5 }) {
 
 // ─── Assignee components ──────────────────────────────────────────────────────
 
-function AssigneeTag({ name, onRemove, onTap }) {
-  const initials = name.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+// Resolve colour for a name from the roster; fall back to a hue-derived colour
+// if the person isn't in the roster (e.g. legacy data or manually typed names).
+function resolveColor(name, roster = []) {
+  const member = roster.find(m => m.name === name);
+  if (member) {
+    const tc = TEAM_COLORS.find(c => c.id === member.colorId);
+    if (tc) return { hex: tc.hex, bg: tc.bg, border: tc.border };
+  }
+  // Fallback: derive from name hash (legacy / ad-hoc)
   const hue = name.split("").reduce((a,c)=>a+c.charCodeAt(0),0) % 360;
-  const color = `hsl(${hue},55%,65%)`;
+  return {
+    hex:    `hsl(${hue},55%,65%)`,
+    bg:     `hsl(${hue},55%,12%)`,
+    border: `hsl(${hue},55%,25%)`,
+  };
+}
+
+function AssigneeTag({ name, onRemove, onTap, roster = [] }) {
+  const initials = name.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+  const { hex, bg, border } = resolveColor(name, roster);
   return (
     <span onClick={e=>{ e.stopPropagation(); if(onTap) onTap(); }}
-      style={{ display:"inline-flex", alignItems:"center", gap:4, background:`hsl(${hue},55%,12%)`, border:`1px solid hsl(${hue},55%,25%)`, borderRadius:20, padding:"2px 8px 2px 6px", fontSize:11, color, fontWeight:600, flexShrink:0, cursor:onTap?"pointer":"default", transition:"filter 0.15s" }}
+      style={{ display:"inline-flex", alignItems:"center", gap:4, background:bg, border:`1px solid ${border}`, borderRadius:20, padding:"2px 8px 2px 6px", fontSize:11, color:hex, fontWeight:600, flexShrink:0, cursor:onTap?"pointer":"default", transition:"filter 0.15s" }}
       onMouseEnter={e=>{ if(onTap) e.currentTarget.style.filter="brightness(1.3)"; }}
       onMouseLeave={e=>{ e.currentTarget.style.filter="none"; }}>
-      <span style={{ width:16, height:16, borderRadius:"50%", background:`hsl(${hue},55%,25%)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700 }}>{initials}</span>
+      <span style={{ width:16, height:16, borderRadius:"50%", background:border, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, color:hex }}>{initials}</span>
       {name}
       {onRemove && <span onClick={e=>{e.stopPropagation();onRemove();}} style={{ cursor:"pointer", opacity:0.6, fontSize:12, lineHeight:1, marginLeft:2 }}>×</span>}
     </span>
   );
 }
 
-function AssigneeInput({ assignees = [], onChange, allNames = [] }) {
+function AssigneeInput({ assignees = [], onChange, roster = [] }) {
   const [input, setInput] = useState("");
   const [open, setOpen]   = useState(false);
   const ref               = useRef(null);
@@ -499,7 +543,9 @@ function AssigneeInput({ assignees = [], onChange, allNames = [] }) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const suggestions = allNames.filter(n => !assignees.includes(n) && n.toLowerCase().includes(input.toLowerCase()));
+  // Suggestions: roster members first, then any ad-hoc names already in use
+  const rosterNames   = roster.map(m => m.name);
+  const suggestions   = rosterNames.filter(n => !assignees.includes(n) && n.toLowerCase().includes(input.toLowerCase()));
 
   function add(name) {
     const n = name.trim();
@@ -515,7 +561,7 @@ function AssigneeInput({ assignees = [], onChange, allNames = [] }) {
       <label style={{ fontSize:10, fontWeight:600, color:"#555", letterSpacing:"0.1em", textTransform:"uppercase" }}>Assigned to</label>
       <div style={{ display:"flex", flexWrap:"wrap", gap:5, background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, padding:"6px 8px", minHeight:34, cursor:"text" }}
         onClick={() => { setOpen(true); ref.current?.querySelector("input")?.focus(); }}>
-        {assignees.map(n => <AssigneeTag key={n} name={n} onRemove={() => remove(n)} />)}
+        {assignees.map(n => <AssigneeTag key={n} name={n} roster={roster} onRemove={() => remove(n)} />)}
         <input value={input} onChange={e => { setInput(e.target.value); setOpen(true); }}
           onKeyDown={e => {
             if (e.key==="Enter" && input.trim()) { e.preventDefault(); add(input); }
@@ -527,13 +573,18 @@ function AssigneeInput({ assignees = [], onChange, allNames = [] }) {
       </div>
       {open && (suggestions.length > 0 || input.trim()) && (
         <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#18181c", border:"1px solid #2a2a30", borderRadius:8, zIndex:50, marginTop:3, overflow:"hidden", boxShadow:"0 4px 16px rgba(0,0,0,0.4)" }}>
-          {suggestions.map(n => (
-            <div key={n} onClick={() => add(n)} style={{ padding:"9px 12px", cursor:"pointer", fontSize:13, color:"#d0ccc8", display:"flex", alignItems:"center", gap:8 }}
-              onMouseEnter={e => e.currentTarget.style.background="#222226"}
-              onMouseLeave={e => e.currentTarget.style.background="transparent"}>
-              <AssigneeTag name={n} />
-            </div>
-          ))}
+          {suggestions.map(n => {
+            const { hex, bg, border } = resolveColor(n, roster);
+            return (
+              <div key={n} onClick={() => add(n)} style={{ padding:"9px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:10 }}
+                onMouseEnter={e => e.currentTarget.style.background="#222226"}
+                onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+                {/* Colour swatch */}
+                <span style={{ width:10, height:10, borderRadius:"50%", background:hex, flexShrink:0, boxShadow:`0 0 5px ${hex}88` }} />
+                <span style={{ fontSize:13, color:"#d0ccc8", flex:1 }}>{n}</span>
+              </div>
+            );
+          })}
           {input.trim() && !assignees.includes(input.trim()) && (
             <div onClick={() => add(input)} style={{ padding:"9px 12px", cursor:"pointer", fontSize:13, color:"#888", borderTop: suggestions.length?"1px solid #1e1e22":"none" }}
               onMouseEnter={e => e.currentTarget.style.background="#222226"}
@@ -560,7 +611,7 @@ function StatusSelect({ value, onChange }) {
 
 // ─── Task Row ─────────────────────────────────────────────────────────────────
 
-function TaskRow({ task, onChange, onDelete, userName, allNames = [], onPersonTap, selected, onSelect }) {
+function TaskRow({ task, onChange, onDelete, userName, allNames = [], roster = [], onPersonTap, selected, onSelect }) {
   const [expanded, setExpanded] = useState(false);
   const st       = TASK_STATUSES.find(s => s.id === task.status) ?? TASK_STATUSES[0];
   const assignees = task.assignees?.length ? task.assignees : (task.owner ? [task.owner] : []);
@@ -590,7 +641,7 @@ function TaskRow({ task, onChange, onDelete, userName, allNames = [], onPersonTa
         {/* Assignee tags */}
         <div style={{ display:"flex", gap:4, flexWrap:"wrap", maxWidth:160 }}>
           {assignees.map(n => (
-            <AssigneeTag key={n} name={n} onTap={onPersonTap ? () => onPersonTap(n) : undefined} />
+            <AssigneeTag key={n} name={n} roster={roster} onTap={onPersonTap ? () => onPersonTap(n) : undefined} />
           ))}
         </div>
 
@@ -609,7 +660,7 @@ function TaskRow({ task, onChange, onDelete, userName, allNames = [], onPersonTa
       {expanded && (
         <div style={{ padding:"12px 14px 16px", display:"flex", flexDirection:"column", gap:10, borderTop:"1px solid #1a1a1e" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-            <AssigneeInput assignees={assignees} onChange={a => onChange({...task, assignees:a, owner:a[0]??""})} allNames={allNames} />
+            <AssigneeInput assignees={assignees} onChange={a => onChange({...task, assignees:a, owner:a[0]??""})} roster={roster} />
             <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
               <label style={{ fontSize:10, fontWeight:600, color:"#555", letterSpacing:"0.1em", textTransform:"uppercase" }}>Due date</label>
               <input type="date" value={task.due} onChange={e => onChange({ ...task, due:e.target.value })} style={{ background:"#0a0a0a", border:"1px solid #252528", borderRadius:7, color:task.due?"#f0ede8":"#555", padding:"7px 10px", fontSize:12 }} />
@@ -1263,6 +1314,64 @@ export default function App() {
   const [editingCats, setEditingCats]         = useState(false);
   const [newCatName, setNewCatName]           = useState("");
 
+  // ── Team roster ───────────────────────────────────────────────────────────
+  // roster: [{ id, name, role, colorId }] — per festival + year
+  const [rosters, setRosters] = useState({});  // keyed by `${festivalId}__${year}`
+
+  const rosterKey = activeFestival && activeYear ? `${activeFestival}__${activeYear}` : null;
+  const roster = (rosterKey ? rosters[rosterKey] : null) ?? [];
+
+  // Load roster from Supabase when festival + year are selected
+  useEffect(() => {
+    if (!activeFestival || !activeYear) return;
+    const rk = `${activeFestival}__${activeYear}`;
+    if (rosters[rk] !== undefined) return; // already loaded
+    supabase.from("reviews")
+      .select("notes")
+      .eq("festival", activeFestival)
+      .eq("year", activeYear)
+      .eq("category_id", "__roster__")
+      .single()
+      .then(({ data }) => {
+        try {
+          const r = data?.notes ? JSON.parse(data.notes) : [];
+          setRosters(p => ({ ...p, [rk]: Array.isArray(r) ? r : [] }));
+        } catch(e) { setRosters(p => ({ ...p, [rk]: [] })); }
+      });
+  }, [activeFestival, activeYear]);
+
+  async function saveRosterToDB(fid, yr, newRoster) {
+    await upsertReview(fid, yr, "__roster__", "__roster__", "__roster__", "__roster__", { notes: JSON.stringify(newRoster) });
+  }
+
+  function updateRoster(fn) {
+    if (!rosterKey) return;
+    setRosters(p => {
+      const current = p[rosterKey] ?? [];
+      const next = typeof fn === "function" ? fn(current) : fn;
+      saveRosterToDB(activeFestival, activeYear, next);
+      return { ...p, [rosterKey]: next };
+    });
+  }
+
+  function addRosterMember(name, role = "") {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const current = rosterKey ? (rosters[rosterKey] ?? []) : [];
+    if (current.some(m => m.name === trimmed)) return;
+    const color = pickNextColor(current);
+    const member = { id: `m-${Date.now()}`, name: trimmed, role: role.trim(), colorId: color.id };
+    updateRoster(prev => [...prev, member]);
+  }
+
+  function removeRosterMember(id) {
+    updateRoster(prev => prev.filter(m => m.id !== id));
+  }
+
+  function updateRosterMemberRole(id, role) {
+    updateRoster(prev => prev.map(m => m.id === id ? { ...m, role } : m));
+  }
+
   // ── View toggles ──────────────────────────────────────────────────────────
   const [mapView, setMapView]   = useState(false);
   const [calView, setCalView]   = useState(false);
@@ -1631,9 +1740,16 @@ export default function App() {
                 );
               })}
             </div>
-            <div style={{ marginTop:48, display:"flex", justifyContent:"center", gap:6 }}>
-              {[["Manage Years","manage-years"],["Manage Departments","manage-depts"]].map(([label, s]) => (
-                <button key={s} onClick={()=>setScreen(s)}
+            <div style={{ marginTop:48, display:"flex", justifyContent:"center", gap:6, flexWrap:"wrap" }}>
+              {[["Manage Years","manage-years"],["Manage Departments","manage-depts"],["👥 Team","team"]].map(([label, s]) => (
+                <button key={s} onClick={()=>{
+                  // Team screen needs a festival selected — prompt if not yet unlocked
+                  if (s === "team" && !activeFestival) {
+                    alert("Open a festival first to manage its team.");
+                    return;
+                  }
+                  setScreen(s);
+                }}
                   style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"7px 14px", cursor:"pointer", letterSpacing:"0.05em", transition:"color 0.12s,border-color 0.12s" }}
                   onMouseEnter={e=>{e.currentTarget.style.color="#aaa";e.currentTarget.style.borderColor="#333";}}
                   onMouseLeave={e=>{e.currentTarget.style.color="#555";e.currentTarget.style.borderColor="#1e1e22";}}>
@@ -1729,6 +1845,139 @@ export default function App() {
       </div>
     </>
   );
+
+  // ── SCREEN: Team roster ───────────────────────────────────────────────────
+  if (screen === "team") {
+    const [newName, setNewName] = useState("");
+    const [newRole, setNewRole] = useState("");
+
+    // Team requires a festival + year to be active
+    const teamFestival = festival ?? FESTIVALS[0];
+    const teamYear     = activeYear ?? CURRENT_YEAR;
+
+    return (
+      <>
+        <style>{css}</style>
+        <div className="screen" style={{ minHeight:"100vh", background:"#0a0a0a" }}>
+          <PageHeader>
+            <BackBtn onClick={()=>setScreen("home")}/>
+            {teamFestival && <FestivalLogo festival={teamFestival} size={34}/>}
+            <span style={{ color:"#2a2a2e", fontSize:14 }}>·</span>
+            <span style={{ fontWeight:700, fontSize:13, color:"#888" }}>Team</span>
+            <div style={{ flex:1 }}/>
+            {activeYear && <span style={{ fontWeight:700, fontSize:12, color:"#444", letterSpacing:"0.06em" }}>{activeYear}</span>}
+          </PageHeader>
+
+          <div style={{ maxWidth:600, margin:"0 auto", padding:"28px 20px 80px" }}>
+            <div style={{ marginBottom:28 }}>
+              <div style={{ fontWeight:800, fontSize:26, color:"#f0ede8", marginBottom:4 }}>Team Roster</div>
+              <div style={{ fontSize:13, color:"#555" }}>
+                {teamFestival?.name} · {teamYear} · {roster.length} member{roster.length!==1?"s":""}
+                {activeYear && <span style={{ color:"#3a3a3e" }}> · This year only</span>}
+              </div>
+            </div>
+
+            {/* Add member form */}
+            <div style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:14, padding:20, marginBottom:24 }}>
+              <div style={{ fontWeight:700, fontSize:11, color:"#555", letterSpacing:"0.1em", marginBottom:14 }}>ADD TEAM MEMBER</div>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                <input
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  onKeyDown={e => { if (e.key==="Enter" && newName.trim()) { addRosterMember(newName, newRole); setNewName(""); setNewRole(""); } }}
+                  placeholder="Full name…"
+                  style={{ flex:2, minWidth:140, background:"#0a0a0a", border:"1px solid #252528", borderRadius:8, color:"#f0ede8", padding:"10px 12px", fontSize:13 }}
+                />
+                <input
+                  value={newRole}
+                  onChange={e => setNewRole(e.target.value)}
+                  onKeyDown={e => { if (e.key==="Enter" && newName.trim()) { addRosterMember(newName, newRole); setNewName(""); setNewRole(""); } }}
+                  placeholder="Role (optional)…"
+                  style={{ flex:2, minWidth:120, background:"#0a0a0a", border:"1px solid #252528", borderRadius:8, color:"#f0ede8", padding:"10px 12px", fontSize:13 }}
+                />
+                <button
+                  onClick={() => { if (newName.trim()) { addRosterMember(newName, newRole); setNewName(""); setNewRole(""); } }}
+                  style={{ background:"#f0ede8", color:"#0a0a0a", border:"none", borderRadius:8, padding:"10px 20px", fontWeight:700, fontSize:13, cursor:"pointer", whiteSpace:"nowrap" }}>
+                  Add
+                </button>
+              </div>
+              {/* Preview of colour that will be assigned */}
+              {newName.trim() && (() => {
+                const next = pickNextColor(roster);
+                return (
+                  <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:8, fontSize:11, color:"#555" }}>
+                    <span style={{ width:10, height:10, borderRadius:"50%", background:next.hex, boxShadow:`0 0 5px ${next.hex}88`, flexShrink:0 }} />
+                    Will be assigned <span style={{ color:next.hex, fontWeight:600 }}>{next.id}</span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Roster list */}
+            {roster.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"48px 0", color:"#333", fontSize:13, letterSpacing:"0.08em" }}>
+                No team members yet — add one above.
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {roster.map(member => {
+                  const tc = TEAM_COLORS.find(c => c.id === member.colorId) ?? TEAM_COLORS[0];
+                  const initials = member.name.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+                  return (
+                    <div key={member.id} style={{ background:"#111113", border:`1px solid ${tc.border}`, borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"center", gap:14 }}>
+                      {/* Avatar with auto-assigned colour */}
+                      <div style={{ width:38, height:38, borderRadius:"50%", background:tc.bg, border:`1.5px solid ${tc.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:tc.hex, flexShrink:0 }}>
+                        {initials}
+                      </div>
+
+                      {/* Name + role */}
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontWeight:700, fontSize:14, color:"#e8e4df", marginBottom:2 }}>{member.name}</div>
+                        <input
+                          value={member.role}
+                          onChange={e => updateRosterMemberRole(member.id, e.target.value)}
+                          placeholder="Role…"
+                          style={{ background:"transparent", border:"none", outline:"none", color:"#555", fontSize:12, padding:0, width:"100%" }}
+                        />
+                      </div>
+
+                      {/* Colour label — read only, auto-assigned */}
+                      <span style={{ fontSize:10, fontWeight:700, color:tc.hex, background:tc.bg, border:`1px solid ${tc.border}`, borderRadius:20, padding:"3px 10px", letterSpacing:"0.06em", flexShrink:0 }}>
+                        {tc.id.toUpperCase()}
+                      </span>
+
+                      {/* Remove */}
+                      <button className="del-btn" onClick={() => { if (window.confirm(`Remove ${member.name} from the roster?`)) removeRosterMember(member.id); }}
+                        style={{ background:"none", border:"none", color:"#2a2a2e", fontSize:15, cursor:"pointer", padding:"0 2px", flexShrink:0, transition:"color 0.12s" }}>✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Colour legend */}
+            {roster.length > 0 && (
+              <div style={{ marginTop:28, padding:"16px 18px", background:"#0d0d10", border:"1px solid #1a1a1e", borderRadius:12 }}>
+                <div style={{ fontSize:10, fontWeight:700, color:"#333", letterSpacing:"0.1em", marginBottom:12 }}>COLOUR LEGEND</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  {roster.map(m => {
+                    const tc = TEAM_COLORS.find(c => c.id === m.colorId) ?? TEAM_COLORS[0];
+                    return (
+                      <div key={m.id} style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <span style={{ width:8, height:8, borderRadius:"50%", background:tc.hex, boxShadow:`0 0 4px ${tc.hex}88`, flexShrink:0 }} />
+                        <span style={{ fontSize:12, color:tc.hex, fontWeight:600 }}>{m.name}</span>
+                        {m.role && <span style={{ fontSize:11, color:"#444" }}>· {m.role}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   // ── SCREEN: Departments ───────────────────────────────────────────────────
   if (screen === "departments") return (
@@ -1982,13 +2231,14 @@ export default function App() {
             <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:22 }}>
               {people.map(p => {
                 const isActive = p==="All" ? !selectedPerson : selectedPerson===p;
-                const hue = p==="All" ? null : p.split("").reduce((a,c)=>a+c.charCodeAt(0),0)%360;
-                const col = hue!=null ? `hsl(${hue},55%,65%)` : "#f0ede8";
+                const { hex, bg, border } = p==="All"
+                  ? { hex:"#f0ede8", bg:"#1e1e22", border:"#444" }
+                  : resolveColor(p, roster);
                 return (
                   <button key={p} onClick={()=>setSelectedPerson(p==="All"?null:p)}
-                    style={{ display:"flex", alignItems:"center", gap:6, background:isActive?(hue!=null?`hsl(${hue},55%,14%)`:"#1e1e22"):"transparent", border:`1px solid ${isActive?(hue!=null?`hsl(${hue},55%,28%)`:"#444"):"#252528"}`, borderRadius:20, padding:"5px 12px 5px 8px", color:isActive?col:"#555", fontSize:12, fontWeight:600, cursor:"pointer", transition:"all 0.15s" }}>
+                    style={{ display:"flex", alignItems:"center", gap:6, background:isActive?bg:"transparent", border:`1px solid ${isActive?border:"#252528"}`, borderRadius:20, padding:"5px 12px 5px 8px", color:isActive?hex:"#555", fontSize:12, fontWeight:600, cursor:"pointer", transition:"all 0.15s" }}>
                     {p!=="All" && (
-                      <span style={{ width:18, height:18, borderRadius:"50%", background:`hsl(${hue},55%,25%)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, color:`hsl(${hue},55%,65%)` }}>
+                      <span style={{ width:18, height:18, borderRadius:"50%", background:border, display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, color:hex }}>
                         {p.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2)}
                       </span>
                     )}
@@ -2032,7 +2282,7 @@ export default function App() {
                               onMouseLeave={e=>e.currentTarget.style.borderColor="#1a1a1e"}>
                               <div style={{ width:7, height:7, borderRadius:"50%", flexShrink:0, background:st.color, boxShadow:task.status!=="not-started"?`0 0 5px ${st.color}66`:"none" }}/>
                               <span style={{ flex:1, fontSize:13, color:task.status==="done"?"#444":"#d0ccc8", textDecoration:task.status==="done"?"line-through":"none", lineHeight:1.4 }}>{task.label}</span>
-                              {assignees.filter(n=>n!==selectedPerson).map(n=><AssigneeTag key={n} name={n} onTap={()=>setSelectedPerson(n)}/>)}
+                              {assignees.filter(n=>n!==selectedPerson).map(n=><AssigneeTag key={n} name={n} roster={roster} onTap={()=>setSelectedPerson(n)}/>)}
                               {task.due && <span style={{ fontSize:10, color:ov?"#ef4444":"#555", flexShrink:0, whiteSpace:"nowrap" }}>{new Date(task.due).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</span>}
                               <StatusSelect value={task.status} onChange={v=>{
                                 const updated = getAreaTasks(activeDept, areaName).map(t => t.id===task.id?{...t,status:v,updated_by:userName}:t);
@@ -2197,6 +2447,7 @@ export default function App() {
                         task={task}
                         userName={userName}
                         allNames={allAssigneeNames}
+                        roster={roster}
                         selected={selectedTasks.has(task.id)}
                         onSelect={!isSupplier ? ()=>toggleSelectTask(task.id) : undefined}
                         onPersonTap={(name) => { setSelectedPerson(name); setScreen("person-tasks"); }}
