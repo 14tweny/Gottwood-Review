@@ -1636,24 +1636,74 @@ export default function App() {
       });
   }, [activeFestival]);
 
-  // Real-time subscription — keeps depts/years in sync across windows/devices
+  // Real-time subscription — all data for the active festival synced instantly
   useEffect(() => {
     if (!activeFestival) return;
+    const fid = activeFestival;
     const channel = supabase
-      .channel(`config-${activeFestival}`)
+      .channel(`rt-${fid}`)
       .on("postgres_changes", {
         event: "*",
         schema: "public",
         table: "reviews",
-        filter: `festival=eq.${activeFestival}`,
+        filter: `festival=eq.${fid}`,
       }, payload => {
         const row = payload.new;
-        if (!row || row.year !== "__config__") return;
-        if (row.category_id === "__depts__") {
-          try { const d = JSON.parse(row.notes); if (d && (Array.isArray(d) || typeof d === "object")) setEventDepts(p => ({...p, [activeFestival]: d})); } catch(e) {}
+        if (!row) return;
+        const { year, area_emoji: dept, area_id, category_id, notes, worked_well, needs_improvement } = row;
+
+        // ── Config rows ──────────────────────────────────────────────────
+        if (year === "__config__") {
+          if (category_id === "__depts__") {
+            try { const d = JSON.parse(notes); if (d && (Array.isArray(d) || typeof d === "object")) setEventDepts(p => ({...p, [fid]: d})); } catch(e) {}
+          } else if (category_id === "__years__") {
+            try { const y = JSON.parse(notes); if (Array.isArray(y)) setEventYears(p => ({...p, [fid]: y})); } catch(e) {}
+          } else if (category_id === "__roster__") {
+            try { const r = JSON.parse(notes); if (Array.isArray(r)) setRosters(p => ({...p, [fid]: r})); } catch(e) {}
+          } else if (category_id === "__svgmap__") {
+            setFestivalMaps(p => ({...p, [fid]: notes ?? null}));
+          }
+          return;
         }
-        if (row.category_id === "__years__") {
-          try { const y = JSON.parse(row.notes); if (Array.isArray(y)) setEventYears(p => ({...p, [activeFestival]: y})); } catch(e) {}
+
+        // ── Review / tracker rows ────────────────────────────────────────
+        const rawAreaId = area_id.replace(`${dept}__`, "");
+        const dk = keys.dept(fid, dept);
+
+        if (category_id === "__areas__") {
+          try { const a = JSON.parse(notes); if (Array.isArray(a)) setAreas(p => ({...p, [dk]: a})); } catch(e) {}
+        } else if (category_id === "__tasks__") {
+          try {
+            const tasks = JSON.parse(notes ?? "[]");
+            const k = keys.tracker(fid, year, dept, rawAreaId);
+            setTrackerData(p => ({...p, [k]: tasks}));
+          } catch(e) {}
+        } else if (category_id === "__desc__") {
+          const k = keys.desc(fid, year, dept, rawAreaId);
+          setAreaDescriptions(p => ({...p, [k]: notes ?? ""}));
+        } else if (category_id === "__cats__") {
+          try {
+            const cats = JSON.parse(notes ?? "null");
+            if (Array.isArray(cats)) { const k = keys.cats(fid, dept, rawAreaId); setAreaCategories(p => ({...p, [k]: cats})); }
+          } catch(e) {}
+        } else if (category_id === "__available_cats__") {
+          try {
+            const cats = JSON.parse(notes ?? "null");
+            if (Array.isArray(cats)) { const k = keys.cats(fid, dept, rawAreaId); setAreaAvailableCats(p => ({...p, [k]: cats})); }
+          } catch(e) {}
+        } else {
+          // Review data (votes, ratings, comments, tags)
+          let votes = {};
+          try { if (worked_well?.startsWith("__votes__")) votes = JSON.parse(worked_well.slice(9)); } catch(e) {}
+          const { tags: rowTags, text: rowNotes } = parseReviewNotes(notes);
+          const k = keys.review(rawAreaId, category_id);
+          setReviewData(p => ({...p, [k]: {
+            votes,
+            worked_well:       worked_well?.startsWith("__votes__") ? "" : worked_well?.startsWith("__comments__") ? JSON.parse(worked_well.slice(12)) : (worked_well ?? ""),
+            needs_improvement: needs_improvement?.startsWith("__comments__") ? JSON.parse(needs_improvement.slice(12)) : (needs_improvement ?? ""),
+            notes: rowNotes,
+            tags: rowTags,
+          }}));
         }
       })
       .subscribe();
