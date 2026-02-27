@@ -1629,23 +1629,19 @@ export default function App() {
   }
 
   function setYearsFor(fid, fn) {
-    setEventYears(p => {
-      const next = typeof fn === "function" ? fn(getYears(fid)) : fn;
-      saveYearsToDB(fid, next);
-      return { ...p, [fid]: next };
-    });
+    const next = typeof fn === "function" ? fn(getYears(fid)) : fn;
+    setEventYears(p => ({ ...p, [fid]: next }));
+    saveYearsToDB(fid, next);
   }
   function setDeptsFor(fid, year, fn) {
-    setEventDepts(p => {
-      const current = p[fid];
-      // Migrate old array format to year-keyed object on first edit
-      const existing = Array.isArray(current) ? {} : (current ?? {});
-      const yearDepts = existing[year] ?? DEFAULT_DEPTS;
-      const next = typeof fn === "function" ? fn(yearDepts) : fn;
-      const updated = { ...existing, [year]: next };
-      saveDeptsToDB(fid, updated);
-      return { ...p, [fid]: updated };
-    });
+    const current = eventDepts[fid];
+    // Migrate old array format to year-keyed object on first edit
+    const existing = Array.isArray(current) ? {} : (current ?? {});
+    const yearDepts = existing[year] ?? DEFAULT_DEPTS;
+    const next = typeof fn === "function" ? fn(yearDepts) : fn;
+    const updated = { ...existing, [year]: next };
+    setEventDepts(p => ({ ...p, [fid]: updated }));
+    saveDeptsToDB(fid, updated);
   }
 
   const festival     = FESTIVALS.find(f => f.id === activeFestival);
