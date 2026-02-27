@@ -1,7 +1,49 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabase.js";
-import SiteMap from "./SiteMap.jsx";
-import { GOTTWOOD_LOGO, PEEP_LOGO, FOURTEEN_TWENTY_LOGO } from "./logos.js";
+
+// ─── Logos (inline SVG data URIs — no external file dependency) ───────────────
+// These render as text-based wordmarks so the app works without any logo files.
+// Replace these with actual base64 image data URIs if you have the logo files.
+
+const GOTTWOOD_LOGO = null;       // will fall through to text wordmark in FestivalLogo
+const PEEP_LOGO = null;           // will fall through to text wordmark in FestivalLogo
+const FOURTEEN_TWENTY_LOGO = null; // will fall through to text wordmark in HomeHeader
+
+// ─── SiteMap (inline stub — replace with real component if needed) ─────────────
+function SiteMap({ festival, areas, tracker, getAreaColor, onAreaTap }) {
+  return (
+    <div style={{ background:"#111113", border:"1px solid #1e1e22", borderRadius:14, padding:32, textAlign:"center" }}>
+      <div style={{ fontSize:12, color:"#444", letterSpacing:"0.1em", marginBottom:16 }}>SITE MAP</div>
+      <div style={{ display:"flex", flexWrap:"wrap", gap:8, justifyContent:"center" }}>
+        {areas.map(a => {
+          const color = getAreaColor(a);
+          return (
+            <button key={a} onClick={() => onAreaTap(a)}
+              style={{ background:color ? color+"18" : "transparent", border:`1px solid ${color || "#252528"}`, borderRadius:8, color:color || "#555", fontSize:12, fontWeight:600, padding:"6px 14px", cursor:"pointer" }}>
+              {a}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Global style injection (runs immediately on module load) ─────────────────
+// Sets body background before React renders to prevent white flash
+if (typeof document !== "undefined") {
+  document.documentElement.style.background = "#0a0a0a";
+  document.body.style.background = "#0a0a0a";
+  document.body.style.color = "#f0ede8";
+  document.body.style.margin = "0";
+  document.body.style.fontFamily = "system-ui, sans-serif";
+  // Inject a <meta> color-scheme tag if not already present
+  if (!document.querySelector('meta[name="color-scheme"]')) {
+    const m = document.createElement("meta");
+    m.name = "color-scheme"; m.content = "dark";
+    document.head.appendChild(m);
+  }
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -384,9 +426,18 @@ const css = `
 // ─── Shared UI ─────────────────────────────────────────────────────────────────
 
 function FestivalLogo({ festival, size = 42, opacity = 1 }) {
-  if (festival.id === "gottwood") return <img src={GOTTWOOD_LOGO} style={{ height: size, opacity, display: "block", objectFit: "contain" }} alt="Gottwood" />;
-  if (festival.id === "peep")     return <img src={PEEP_LOGO}     style={{ height: size, opacity, display: "block", objectFit: "contain" }} alt="Peep" />;
-  return <span style={{ opacity, fontSize: size * 0.46, fontWeight: 700, letterSpacing: "0.06em" }}>{festival.name.toUpperCase()}</span>;
+  // Use image if logo data is available, otherwise fall back to styled text
+  const logoSrc = festival.id === "gottwood" ? GOTTWOOD_LOGO
+    : festival.id === "peep" ? PEEP_LOGO
+    : null;
+  if (logoSrc) return <img src={logoSrc} style={{ height: size, opacity, display: "block", objectFit: "contain" }} alt={festival.name} />;
+  // Text wordmark fallback — clean and intentional
+  const fs = Math.max(10, size * 0.36);
+  return (
+    <span style={{ opacity, fontSize: fs, fontWeight: 800, letterSpacing: "0.12em", color: "#f0ede8", whiteSpace: "nowrap", lineHeight: 1 }}>
+      {festival.name.toUpperCase()}
+    </span>
+  );
 }
 
 function PageHeader({ children }) {
@@ -1874,7 +1925,10 @@ export default function App() {
   // ── Overlays ──────────────────────────────────────────────────────────────
   const identityOverlay = showIdentity && (
     <Overlay>
-      <img src={FOURTEEN_TWENTY_LOGO} style={{ height:36, objectFit:"contain", marginBottom:24, display:"block" }} alt="14twenty" />
+      {FOURTEEN_TWENTY_LOGO
+        ? <img src={FOURTEEN_TWENTY_LOGO} style={{ height:36, objectFit:"contain", marginBottom:24, display:"block" }} alt="14twenty" />
+        : <div style={{ fontSize:18, fontWeight:800, letterSpacing:"0.15em", color:"#f0ede8", marginBottom:24 }}>14TWENTY</div>
+      }
       <div style={{ fontWeight:800, fontSize:20, marginBottom:6, color:"#f0ede8" }}>Who are you?</div>
       <div style={{ fontSize:13, color:"#555", marginBottom:24, lineHeight:1.5 }}>Your name stamps your votes and task changes so the team knows who made updates.</div>
       <div style={{ display:"flex", flexDirection:"column", gap:10, marginBottom:20 }}>
@@ -1931,7 +1985,10 @@ export default function App() {
       <div className="screen" style={{ minHeight:"100vh", background:"#0a0a0a", display:"flex", flexDirection:"column" }}>
         <div style={{ borderBottom:"1px solid #1a1a1e", padding:"0 24px", flexShrink:0 }}>
           <div style={{ maxWidth:560, margin:"0 auto", height:60, display:"flex", alignItems:"center", gap:16 }}>
-            <img src={FOURTEEN_TWENTY_LOGO} style={{ height:28, objectFit:"contain" }} alt="14twenty" />
+            {FOURTEEN_TWENTY_LOGO
+              ? <img src={FOURTEEN_TWENTY_LOGO} style={{ height:28, objectFit:"contain" }} alt="14twenty" />
+              : <span style={{ fontSize:16, fontWeight:800, letterSpacing:"0.15em", color:"#f0ede8" }}>14TWENTY</span>
+            }
             <div style={{ flex:1 }} />
             <button onClick={()=>setShowIdentity(true)} style={{ background:"none", border:"1px solid #1e1e22", borderRadius:20, color:"#555", fontSize:11, fontWeight:600, padding:"4px 14px", cursor:"pointer", letterSpacing:"0.05em", maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
               {displayName} ▾
