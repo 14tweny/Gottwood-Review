@@ -1636,6 +1636,30 @@ export default function App() {
       });
   }, [activeFestival]);
 
+  // Real-time subscription — keeps depts/years in sync across windows/devices
+  useEffect(() => {
+    if (!activeFestival) return;
+    const channel = supabase
+      .channel(`config-${activeFestival}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "reviews",
+        filter: `festival=eq.${activeFestival}`,
+      }, payload => {
+        const row = payload.new;
+        if (!row || row.year !== "__config__") return;
+        if (row.category_id === "__depts__") {
+          try { const d = JSON.parse(row.notes); if (d && (Array.isArray(d) || typeof d === "object")) setEventDepts(p => ({...p, [activeFestival]: d})); } catch(e) {}
+        }
+        if (row.category_id === "__years__") {
+          try { const y = JSON.parse(row.notes); if (Array.isArray(y)) setEventYears(p => ({...p, [activeFestival]: y})); } catch(e) {}
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [activeFestival]);
+
   async function saveYearsToDB(fid, years) {
     await upsertReview(fid, "__config__", "__years__", "__years__", "__config__", "__years__", { notes: JSON.stringify(years) });
   }
