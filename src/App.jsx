@@ -1483,7 +1483,7 @@ export default function App() {
     : (isSupplier ? "Supplier" : "Set identity");
 
   // ── Password ──────────────────────────────────────────────────────────────
-  const [unlockedFestivals, setUnlockedFestivals] = useState({});
+  const [unlockedFestivals, setUnlockedFestivals] = useState(() => lsGet("14twenty_unlocked", {}));
   const [passwordTarget, setPasswordTarget]       = useState(null);
   const [passwordInput, setPasswordInput]         = useState("");
   const [passwordError, setPasswordError]         = useState(false);
@@ -1492,7 +1492,9 @@ export default function App() {
     const fest = FESTIVALS.find(f => f.id === fid);
     if (!fest) return;
     if (passwordInput === fest.password) {
-      setUnlockedFestivals(p => ({...p, [fid]:true}));
+      const next = { ...lsGet("14twenty_unlocked", {}), [fid]: true };
+      lsSet("14twenty_unlocked", next);
+      setUnlockedFestivals(next);
       setPasswordTarget(null); setPasswordInput(""); setPasswordError(false);
       setActiveFestival(fid); setScreen("year");
       // Auto-add user to this festival's roster after a short delay (roster loads async)
