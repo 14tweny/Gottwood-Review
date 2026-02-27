@@ -883,7 +883,13 @@ function AreaDescription({ value, onChange, readOnly }) {
 // ─── Voting bar ───────────────────────────────────────────────────────────────
 
 function VotingBar({ votes, userName, onChange }) {
-  const myVote = votes[userName] ?? null;
+  // Find the current user's existing vote — tolerates old "Name · Company" keys
+  const myVoteEntry = Object.entries(votes).find(([k]) =>
+    k === userName || k.split(" ·")[0].trim() === userName.trim()
+  );
+  const myVote    = myVoteEntry?.[1] ?? null;
+  const myVoteKey = myVoteEntry?.[0];  // may differ from userName (old format)
+
   const allVals = Object.values(votes);
   const total = allVals.length;
 
@@ -916,7 +922,8 @@ function VotingBar({ votes, userName, onChange }) {
             <div style={{ fontSize:10, color:"#555", marginBottom:4 }}>{total} vote{total!==1?"s":""}</div>
             {Object.entries(votes).map(([name, v]) => {
               const r = getRating(v);
-              return <div key={name} style={{ fontSize:9, color:"#3a3a3e", letterSpacing:"0.04em" }}>{name.split(" ·")[0]} — {r?.label}</div>;
+              const isMe = name === myVoteKey;
+              return <div key={name} style={{ fontSize:9, color:isMe?"#888":"#3a3a3e", letterSpacing:"0.04em" }}>{name.split(" ·")[0]} — {r?.label}</div>;
             })}
           </div>
         </div>
@@ -929,6 +936,8 @@ function VotingBar({ votes, userName, onChange }) {
             return (
               <button key={r.value} className="rating-btn" onClick={() => {
                 const newVotes = { ...votes };
+                // Remove any old entry for this user (e.g. stored as "Name · Company")
+                if (myVoteKey && myVoteKey !== userName) delete newVotes[myVoteKey];
                 if (active) delete newVotes[userName]; else newVotes[userName] = r.value;
                 onChange(newVotes);
               }} style={{ flex:1, height:44, borderRadius:8, border:`1.5px solid ${active?r.color:"#252528"}`, background:active?r.color+"22":"#131315", color:active?r.color:"#555", fontSize:11, fontWeight:600, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2 }}>
