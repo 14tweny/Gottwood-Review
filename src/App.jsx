@@ -203,6 +203,20 @@ function parseComments(raw) {
   return [];
 }
 
+// Parses the notes field which may be:
+//   - plain string (old format)
+//   - JSON object { text: "...", assignees: [...] } (new format)
+function parseNotesField(raw) {
+  if (!raw) return { text: "", assignees: [] };
+  try {
+    const p = JSON.parse(raw);
+    if (p && typeof p === "object" && !Array.isArray(p) && ("text" in p || "assignees" in p)) {
+      return { text: p.text ?? "", assignees: p.assignees ?? [] };
+    }
+  } catch(e) {}
+  return { text: typeof raw === "string" ? raw : "", assignees: [] };
+}
+
 // ─── Supabase helper ──────────────────────────────────────────────────────────
 
 async function upsertReview(festival, year, dept, areaId, areaName, categoryId, payload) {
@@ -879,7 +893,7 @@ function CommentThread({ entries = [], onSave, userName, placeholder, bgColor, i
 
 // ─── Review section ───────────────────────────────────────────────────────────
 
-function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove, userName, isSupplier, nextYear, areaName, onAISuggestion }) {
+function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove, userName, isSupplier, nextYear, areaName, onAISuggestion, roster = [] }) {
   const status = saveStatuses[saveKey] ?? "idle";
   const [open, setOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState(null);
@@ -888,12 +902,26 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
   const votes      = data?.votes ?? {};
   const wwEntries  = parseComments(data?.worked_well);
   const niEntries  = parseComments(data?.needs_improvement);
-  const [no, setNo] = useState(data?.notes ?? "");
 
-  useEffect(() => { setNo(data?.notes ?? ""); }, [data]);
+  // notes field stores { text, assignees } JSON (new) or plain string (old)
+  const parsedNotes = parseNotesField(data?.notes);
+  const [no, setNo]             = useState(parsedNotes.text);
+  const [assignees, setAssignees] = useState(parsedNotes.assignees);
 
-  function buildPatch(newVotes, newWw, newNi, newNo) {
-    return { votes:newVotes, worked_well:newWw, needs_improvement:newNi, notes:newNo };
+  useEffect(() => {
+    const p = parseNotesField(data?.notes);
+    setNo(p.text);
+    setAssignees(p.assignees);
+  }, [data]);
+
+  function serializeNotes(text, asgn) {
+    // Only use JSON wrapper when there are assignees, keeping old plain-text format otherwise
+    if (asgn.length > 0) return JSON.stringify({ text, assignees: asgn });
+    return text;
+  }
+
+  function buildPatch(newVotes, newWw, newNi, newNo, newAssignees) {
+    return { votes:newVotes, worked_well:newWw, needs_improvement:newNi, notes:serializeNotes(newNo, newAssignees) };
   }
 
   const debouncedSave = useDebounce((patch) => onSave(patch), 900);
@@ -913,10 +941,11 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
     }, 2500);
   }
 
-  function handleWW(newEntries) { const p=buildPatch(votes,newEntries,niEntries,no); debouncedSave(p); triggerAI(newEntries,niEntries,no); }
-  function handleNI(newEntries) { const p=buildPatch(votes,wwEntries,newEntries,no); debouncedSave(p); triggerAI(wwEntries,newEntries,no); }
-  function handleNo(v)          { setNo(v); const p=buildPatch(votes,wwEntries,niEntries,v); debouncedSave(p); triggerAI(wwEntries,niEntries,v); }
-  function handleVotes(nv)      { onSave(buildPatch(nv,wwEntries,niEntries,no)); }
+  function handleWW(newEntries) { const p=buildPatch(votes,newEntries,niEntries,no,assignees); debouncedSave(p); triggerAI(newEntries,niEntries,no); }
+  function handleNI(newEntries) { const p=buildPatch(votes,wwEntries,newEntries,no,assignees); debouncedSave(p); triggerAI(wwEntries,newEntries,no); }
+  function handleNo(v)          { setNo(v); const p=buildPatch(votes,wwEntries,niEntries,v,assignees); debouncedSave(p); triggerAI(wwEntries,niEntries,v); }
+  function handleVotes(nv)      { onSave(buildPatch(nv,wwEntries,niEntries,no,assignees)); }
+  function handleAssignees(a)   { setAssignees(a); debouncedSave(buildPatch(votes,wwEntries,niEntries,no,a)); }
 
   const allVals = Object.values(votes);
   const total   = allVals.length;
@@ -934,8 +963,14 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
           <span style={{ fontWeight:700, fontSize:13, letterSpacing:"0.05em", flex:1, color:modeRating||hasContent?"#e8e4df":"#555" }}>{catName.toUpperCase()}</span>
           {status==="saving" && <span style={{ fontSize:10, color:"#555" }}>SAVING…</span>}
           {status==="saved"  && <span className="save-pulse" style={{ fontSize:10, color:"#22c55e" }}>SAVED</span>}
+          {/* Assignee tags visible on collapsed header */}
+          {!open && assignees.length > 0 && (
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+              {assignees.map(n => <AssigneeTag key={n} name={n} roster={roster} />)}
+            </div>
+          )}
           {total>0 && !open && modeRating && <span style={{ fontSize:10, fontWeight:700, color:modeRating.color, letterSpacing:"0.06em" }}>{modeRating.label.toUpperCase()} · {total}v</span>}
-          {!total && hasContent && !open && <span style={{ fontSize:10, color:"#444", letterSpacing:"0.06em" }}>{[...new Set([...wwEntries,...niEntries].map(e=>e.author).filter(Boolean))].slice(0,3).join(", ") || "NOTES"}</span>}
+          {!total && hasContent && !open && assignees.length === 0 && <span style={{ fontSize:10, color:"#444", letterSpacing:"0.06em" }}>{[...new Set([...wwEntries,...niEntries].map(e=>e.author).filter(Boolean))].slice(0,3).join(", ") || "NOTES"}</span>}
           <span style={{ color:"#333", fontSize:12, transform:open?"rotate(180deg)":"none", transition:"transform 0.2s", display:"inline-block", marginLeft:4 }}>▼</span>
         </button>
         {!isSupplier && (
@@ -958,9 +993,12 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
               <CommentThread entries={niEntries} onSave={handleNI} userName={userName} placeholder="What to fix..." bgColor="#1a0e0e" isSupplier={isSupplier} />
             </div>
           </div>
-          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            <label style={lbSt}>Notes, suppliers & ideas</label>
-            <textarea value={no} onChange={e => handleNo(e.target.value)} placeholder="Contacts, costs, specs..." style={{ ...taSt("#0e0e1a"), minHeight:52 }} />
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <AssigneeInput assignees={assignees} onChange={handleAssignees} roster={roster} />
+            <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <label style={lbSt}>Notes, suppliers & ideas</label>
+              <textarea value={no} onChange={e => handleNo(e.target.value)} placeholder="Contacts, costs, specs..." style={{ ...taSt("#0e0e1a"), minHeight:52 }} />
+            </div>
           </div>
           {aiStatus && (
             <div className="ai-pulse" style={{ display:"flex", alignItems:"center", gap:8, fontSize:11, color:aiStatus==="done"?"#a78bfa":"#555", letterSpacing:"0.05em" }}>
@@ -2823,6 +2861,7 @@ export default function App() {
                       return (
                         <ReviewSection key={k} catName={cat} data={reviewData[k]} saveKey={k} saveStatuses={saveStatuses}
                           userName={userName} isSupplier={isSupplier} nextYear={nextTrackerYear} areaName={selectedArea}
+                          roster={roster}
                           onSave={patch=>handleSave(selectedArea,cat,patch)}
                           onRemove={()=>setCats(selectedArea,cats.filter(c=>c!==cat))}
                           onAISuggestion={suggestion=>addAISuggestion(selectedArea,suggestion)}
