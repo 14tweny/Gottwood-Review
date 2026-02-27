@@ -1333,7 +1333,7 @@ function SAGDashboard({ festival, years, getDepts, getAreaTasks, allAreas, onClo
   // Collect all council-licensing tasks with due dates across all tracker years
   const allDeadlines = [];
   years.filter(y => isTrackerYear(y)).forEach(year => {
-    const depts = getDepts(festival.id, year);
+    const depts = getDepts(festival.id);
     const clDept = depts.find(d => d.id==="council-licensing");
     if (!clDept) return;
     const deptAreas = allAreas[keys.dept(festival.id, clDept.id)] ?? [];
@@ -1740,13 +1740,17 @@ export default function App() {
   }
 
   function getYears(fid) { return eventYears[fid] ?? DEFAULT_YEARS[fid] ?? [CURRENT_YEAR]; }
-  function getDepts(fid, year) {
+  // Departments are per-festival only (not per-year). Handles all legacy formats:
+  // - undefined/null → DEFAULT_DEPTS
+  // - plain array    → use directly
+  // - year-keyed obj → flatten: take first non-null year's array
+  function getDepts(fid) {
     const fidDepts = eventDepts[fid];
     if (!fidDepts) return DEFAULT_DEPTS;
-    // Old format (pre-year-isolation): plain array — fall back for any year
     if (Array.isArray(fidDepts)) return fidDepts;
-    // New format: { [year]: [...depts] }
-    return fidDepts[year] ?? DEFAULT_DEPTS;
+    // Legacy year-keyed format: pull out the array from whichever year has data
+    const arr = Object.values(fidDepts).find(v => Array.isArray(v) && v.length >= 0);
+    return arr ?? DEFAULT_DEPTS;
   }
 
   function setYearsFor(fid, fn) {
@@ -1758,33 +1762,30 @@ export default function App() {
     });
     if (toSave) saveYearsToDB(fid, toSave).catch(() => showSaveError());
   }
-  function setDeptsFor(fid, year, fn) {
+  function setDeptsFor(fid, fn) {
     let toSave;
     setEventDepts(p => {
       const current = p[fid];
-      let existing;
-      if (!current || Array.isArray(current)) {
-        // No data yet, or old flat-array format — use it as the base for this year
-        // (previously this discarded the array and fell back to DEFAULT_DEPTS, causing
-        //  all removed departments to reappear on the next delete)
-        existing = { [year]: current ?? DEFAULT_DEPTS };
+      // Normalise any legacy format to a plain array
+      let currentArr;
+      if (!current) {
+        currentArr = DEFAULT_DEPTS;
+      } else if (Array.isArray(current)) {
+        currentArr = current;
       } else {
-        // New year-keyed format — migrate "null" key if present
-        existing = (current[year] === undefined && current["null"])
-          ? { ...current, [year]: current["null"] }
-          : current;
+        // Year-keyed legacy: flatten to the first array found
+        currentArr = Object.values(current).find(v => Array.isArray(v)) ?? DEFAULT_DEPTS;
       }
-      const yearDepts = existing[year] ?? DEFAULT_DEPTS;
-      const next = typeof fn === "function" ? fn(yearDepts) : fn;
-      toSave = { ...existing, [year]: next };
-      return { ...p, [fid]: toSave };
+      const next = typeof fn === "function" ? fn(currentArr) : fn;
+      toSave = next;
+      return { ...p, [fid]: next };
     });
     if (toSave) saveDeptsToDB(fid, toSave).catch(() => showSaveError());
   }
 
   const festival     = FESTIVALS.find(f => f.id === activeFestival);
   const activeYears  = activeFestival ? getYears(activeFestival) : [];
-  const activeDepts  = activeFestival ? getDepts(activeFestival, activeYear) : DEFAULT_DEPTS;
+  const activeDepts  = activeFestival ? getDepts(activeFestival) : DEFAULT_DEPTS;
   const tracker      = isTrackerYear(activeYear);
   const deptKey      = keys.dept(activeFestival, activeDept);
   const dept         = activeDepts.find(d => d.id === activeDept);
@@ -2432,13 +2433,13 @@ export default function App() {
   }
 
   if (screen === "manage-depts") {
-    const fid = activeFestival, yr = activeYear, ds = fid ? getDepts(fid, yr) : DEFAULT_DEPTS;
+    const fid = activeFestival, ds = fid ? getDepts(fid) : DEFAULT_DEPTS;
     return (
       <ManageScreen title={`Manage Departments${festival?` — ${festival.name}`:""}`} onBack={()=>setScreen(fid?"departments":"home")}>
         {fid ? (
           <>
-            {ds.map(d => <ManageRow key={d.id} label={d.name} onDelete={()=>setDeptsFor(fid,yr,p=>p.filter(x=>x.id!==d.id))}/>)}
-            <AddRow placeholder="Department name..." onAdd={name=>setDeptsFor(fid,yr,p=>[...p,{id:slugify(name),name}])}/>
+            {ds.map(d => <ManageRow key={d.id} label={d.name} onDelete={()=>setDeptsFor(fid,p=>p.filter(x=>x.id!==d.id))}/>)}
+            <AddRow placeholder="Department name..." onAdd={name=>setDeptsFor(fid,p=>[...p,{id:slugify(name),name}])}/>
           </>
         ) : <div style={{ textAlign:"center", padding:40, color:"#444", fontSize:13 }}>Open an event first to manage its departments.</div>}
       </ManageScreen>
