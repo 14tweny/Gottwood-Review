@@ -91,6 +91,12 @@ const TASK_STATUSES = [
   { id: "blocked",     label: "Blocked",     color: "#ef4444" },
 ];
 
+// Smart task sort: in-progress → top, done → bottom, manual order preserved within groups
+function smartSortTasks(tasks) {
+  const rank = { "in-progress": 0, "not-started": 1, "blocked": 1, "done": 2 };
+  return [...tasks].sort((a, b) => (rank[a.status] ?? 1) - (rank[b.status] ?? 1));
+}
+
 const REVIEW_RATINGS = [
   { value: 1, label: "Poor",       color: "#ef4444" },
   { value: 2, label: "Needs Work", color: "#f97316" },
@@ -420,7 +426,7 @@ function AddRow({ placeholder, onAdd }) {
     <div style={{ display:"flex", gap:8, padding:"8px 0" }}>
       <input autoFocus value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if (e.key==="Enter") submit(); if (e.key==="Escape") setActive(false); }} placeholder={placeholder} style={{ flex:1, background:"#111113", border:"1px solid #333", borderRadius:8, color:"#f0ede8", padding:"9px 12px", fontSize:13 }} />
       <button onClick={submit} style={{ background:"#f0ede8", color:"#0a0a0a", border:"none", borderRadius:8, padding:"9px 18px", fontWeight:700, fontSize:12, cursor:"pointer" }}>ADD</button>
-      <button onClick={() => setActive(false)} style={{ background:"transparent", color:"#555", border:"1px solid #252528", borderRadius:8, padding:"9px 12px", fontSize:12, cursor:"pointer" }}>✕</button>
+      <button onClick={() => setActive(false)} style={{ background:"transparent", color:"#555", border:"1px solid #252528", borderRadius:8, padding:"9px 12px", fontSize:12, cursor:"pointer" }}>×</button>
     </div>
   );
 }
@@ -919,21 +925,20 @@ function ReviewSection({ catName, data, onSave, saveKey, saveStatuses, onRemove,
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              <label style={lbSt}>✓ What worked well</label>
+              <label style={lbSt}>What worked well</label>
               <CommentThread entries={wwEntries} onSave={handleWW} userName={userName} placeholder="What went well..." bgColor="#0a1a12" isSupplier={isSupplier} />
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              <label style={lbSt}>↑ Needs improvement</label>
+              <label style={lbSt}>Needs improvement</label>
               <CommentThread entries={niEntries} onSave={handleNI} userName={userName} placeholder="What to fix..." bgColor="#1a0e0e" isSupplier={isSupplier} />
             </div>
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-            <label style={lbSt}>↗ Notes, suppliers & ideas</label>
+            <label style={lbSt}>Notes, suppliers & ideas</label>
             <textarea value={no} onChange={e => handleNo(e.target.value)} placeholder="Contacts, costs, specs..." style={{ ...taSt("#0e0e1a"), minHeight:52 }} />
           </div>
           {aiStatus && (
             <div className="ai-pulse" style={{ display:"flex", alignItems:"center", gap:8, fontSize:11, color:aiStatus==="done"?"#a78bfa":"#555", letterSpacing:"0.05em" }}>
-              <span>✦</span>
               {aiStatus==="thinking" ? `Generating ${nextYear} tracker suggestion…` : `Suggestion added to ${nextYear} tracker ✓`}
             </div>
           )}
@@ -1300,11 +1305,18 @@ export default function App() {
   const [selectedPerson, setSelectedPerson] = useState(null);
 
   // ── Identity ──────────────────────────────────────────────────────────────
-  const storedUser = (() => { try { return JSON.parse(localStorage.getItem("14twenty_user")??"null"); } catch(e) { return null; } })();
-  const [user, setUser]               = useState(storedUser);
-  const [showIdentity, setShowIdentity] = useState(!storedUser && !isSupplier);
-  const [identityName, setIdentityName] = useState(storedUser?.name ?? "");
-  const [identityCompany, setIdentityCompany] = useState(storedUser?.company ?? "");
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("14twenty_user") ?? "null"); } catch(e) { return null; }
+  });
+  const [showIdentity, setShowIdentity] = useState(() => {
+    try { return !JSON.parse(localStorage.getItem("14twenty_user") ?? "null") && !isSupplier; } catch(e) { return true; }
+  });
+  const [identityName, setIdentityName] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("14twenty_user") ?? "null")?.name ?? ""; } catch(e) { return ""; }
+  });
+  const [identityCompany, setIdentityCompany] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("14twenty_user") ?? "null")?.company ?? ""; } catch(e) { return ""; }
+  });
 
   function saveIdentity() {
     const name    = identityName.trim() || "Team";
@@ -1504,6 +1516,9 @@ export default function App() {
     updateRoster(prev => prev.map(m => m.id === id ? { ...m, role } : m));
   }
 
+  // Ref to hold a pending roster-add when roster hasn't loaded yet
+  const pendingRosterAddRef = useRef(null);
+
   // When a user sets their identity, auto-add them to the current festival's roster.
   // Works immediately if roster is loaded, or queues until it loads.
   function ensureUserInRoster(name, fid = activeFestival) {
@@ -1521,9 +1536,6 @@ export default function App() {
     updateRoster(prev => [...prev, member], fid);
   }
 
-  // Ref to hold a pending roster add if the roster wasn't loaded yet
-  const pendingRosterAddRef = useRef(null);
-
   // After roster loads, process any pending add
   useEffect(() => {
     const pending = pendingRosterAddRef.current;
@@ -1539,19 +1551,8 @@ export default function App() {
     if (!activeFestival || !userName || userName === "Team" || userName === "Supplier") return;
     if (rosters[activeFestival] === undefined) return; // wait for load
     ensureUserInRoster(userName, activeFestival);
-  }, [activeFestival, rosters[activeFestival]]);
-
-  // Resolve colour for display: use roster match (including fuzzy), fallback to hash
-  function resolveColorForFestival(name, fid = activeFestival) {
-    const r = fid ? (rosters[fid] ?? []) : roster;
-    const member = findRosterMember(name, fid) ?? r.find(m => m.name === name);
-    if (member) {
-      const tc = TEAM_COLORS.find(c => c.id === member.colorId);
-      if (tc) return { hex: tc.hex, bg: tc.bg, border: tc.border };
-    }
-    const hue = name.split("").reduce((a,c) => a + c.charCodeAt(0), 0) % 360;
-    return { hex: `hsl(${hue},55%,65%)`, bg: `hsl(${hue},55%,12%)`, border: `hsl(${hue},55%,25%)` };
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFestival, roster.length, activeFestival && rosters[activeFestival] !== undefined]);
 
   // ── View toggles ──────────────────────────────────────────────────────────
   const [mapView, setMapView]   = useState(false);
@@ -1949,13 +1950,13 @@ export default function App() {
                   <button key={f.id} className="fest-card" onClick={()=>selectFestival(f.id)}
                     style={{ width:"100%", padding:"36px 32px", background:"#111113", border:"1px solid #1e1e22", borderRadius:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
                     <FestivalLogo festival={f} size={52} />
-                    <span style={{ position:"absolute", right:20, top:"50%", transform:"translateY(-50%)", fontSize:16, color:"#222" }}>{unlocked?"→":"🔒"}</span>
+                    <span style={{ position:"absolute", right:20, top:"50%", transform:"translateY(-50%)", fontSize:16, color:"#222" }}>{unlocked?"→":"–"}</span>
                   </button>
                 );
               })}
             </div>
             <div style={{ marginTop:48, display:"flex", justifyContent:"center", gap:6, flexWrap:"wrap" }}>
-              {[["Manage Years","manage-years"],["Manage Departments","manage-depts"],["👥 Team","team"]].map(([label, s]) => (
+              {[["Manage Years","manage-years"],["Manage Departments","manage-depts"],["Team","team"]].map(([label, s]) => (
                 <button key={s} onClick={()=>{
                   // Team screen needs a festival selected — prompt if not yet unlocked
                   if (s === "team" && !activeFestival) {
@@ -2263,13 +2264,13 @@ export default function App() {
                   style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.06em", whiteSpace:"nowrap" }}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor="#444";e.currentTarget.style.color="#f0ede8";}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor="#252528";e.currentTarget.style.color="#555";}}>
-                  👤 People
+                  People
                 </button>
               )}
               {!isSupplier && tracker && (
                 <button onClick={()=>{ setCalView(v=>!v); setMapView(false); }}
                   style={{ background:calView?"#f0ede811":"transparent", border:`1px solid ${calView?"#888":"#252528"}`, borderRadius:8, color:calView?"#f0ede8":"#555", fontSize:11, fontWeight:700, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.08em", whiteSpace:"nowrap", transition:"all 0.15s" }}>
-                  {calView?"☰ LIST":"📅 CAL"}
+                  {calView?"List":"Cal"}
                 </button>
               )}
               {/* MAP button — available for all festivals, shows upload prompt if no map yet */}
@@ -2284,7 +2285,7 @@ export default function App() {
                   }
                 }}
                   style={{ background:mapView?"#f0ede811":"transparent", border:`1px solid ${mapView?"#888":"#252528"}`, borderRadius:8, color:mapView?"#f0ede8":"#555", fontSize:11, fontWeight:700, padding:"6px 14px", cursor:"pointer", letterSpacing:"0.08em", whiteSpace:"nowrap", transition:"all 0.15s" }}>
-                  {mapView ? "☰ LIST" : festivalMaps[activeFestival] ? "▦ MAP" : "▦ MAP +"}
+                  {mapView ? "List" : festivalMaps[activeFestival] ? "Map" : "Map +"}
                 </button>
               )}
               {/* Hidden SVG file input */}
@@ -2317,9 +2318,9 @@ export default function App() {
           {/* Area search bar */}
           {tracker && !calView && !mapView && (
             <div style={{ position:"relative", marginBottom:14 }}>
-              <span style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", fontSize:13, color:"#444", pointerEvents:"none" }}>🔍</span>
+              <span style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", fontSize:13, color:"#444", pointerEvents:"none" }}></span>
               <input value={areaSearch} onChange={e=>setAreaSearch(e.target.value)} placeholder={`Search ${festivalAreas.length} areas…`}
-                style={{ width:"100%", background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#f0ede8", padding:"9px 10px 9px 32px", fontSize:13, boxSizing:"border-box" }} />
+                style={{ width:"100%", background:"#111113", border:"1px solid #1e1e22", borderRadius:8, color:"#f0ede8", padding:"9px 10px", fontSize:13, boxSizing:"border-box" }} />
               {areaSearch && <button onClick={()=>setAreaSearch("")} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#444", cursor:"pointer", fontSize:14, padding:0 }}>✕</button>}
             </div>
           )}
@@ -2344,7 +2345,7 @@ export default function App() {
                       style={{ background:"transparent", border:"1px solid #eab30855", borderRadius:8, color:"#eab308", fontSize:11, fontWeight:600, padding:"5px 12px", cursor:"pointer", whiteSpace:"nowrap" }}
                       onMouseEnter={e=>{e.currentTarget.style.background="#eab30811";}}
                       onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-                      ↩ Copy from {prevYear}
+                      Copy from {prevYear}
                     </button>
                   )}
                   <button onClick={()=>exportTrackerPDF({festival,year:activeYear,depts:activeDepts,allAreas:areas,getAreaTasks:(d,a)=>getAreaTasks(d,a,activeFestival,activeYear)})}
@@ -2379,7 +2380,7 @@ export default function App() {
                   style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"5px 12px", cursor:"pointer" }}
                   onMouseEnter={e=>{e.currentTarget.style.color="#f0ede8";e.currentTarget.style.borderColor="#444";}}
                   onMouseLeave={e=>{e.currentTarget.style.color="#555";e.currentTarget.style.borderColor="#252528";}}>
-                  ↑ Replace SVG map
+                  Replace map
                 </button>
               </div>
             </div>
@@ -2579,8 +2580,12 @@ export default function App() {
   const areaTasks = getAreaTasks(activeDept, selectedArea);
   const isSavingTasks = taskSaving[keys.dept(activeDept, areaId)];
 
-  // NEW: Task search filter
-  const filteredTasks = areaTasks; // search moved to area list level
+  // Apply smart sort: in-progress → top, done → bottom.
+  // If tasks have been manually drag-ordered (have _order), respect that ordering instead.
+  const hasManualOrder = areaTasks.some(t => t._order !== undefined);
+  const filteredTasks = hasManualOrder
+    ? [...areaTasks].sort((a, b) => (a._order ?? 999) - (b._order ?? 999))
+    : smartSortTasks(areaTasks);
 
   return (
     <>
@@ -2601,7 +2606,7 @@ export default function App() {
               {editingCats?"DONE":"EDIT SECTIONS"}
             </button>
           )}
-          {nextTrackerYear && !isSupplier && <span style={{ fontSize:9, color:"#a78bfa", letterSpacing:"0.06em", border:"1px solid #a78bfa33", borderRadius:20, padding:"2px 8px", whiteSpace:"nowrap" }}>✦ AI → {nextTrackerYear}</span>}
+          {nextTrackerYear && !isSupplier && <span style={{ fontSize:9, color:"#a78bfa", letterSpacing:"0.06em", border:"1px solid #a78bfa33", borderRadius:20, padding:"2px 8px", whiteSpace:"nowrap" }}> AI {nextTrackerYear}</span>}
         </PageHeader>
 
         <div style={{ maxWidth:700, margin:"0 auto", padding:"28px 20px 80px" }}>
@@ -2654,12 +2659,18 @@ export default function App() {
                 <div style={{ display:"flex", gap:8, alignItems:"center" }}>
                   <button onClick={()=>{ if(selectedTasks.size>0) clearSelection(); else setSelectedTasks(new Set(areaTasks.map(t=>t.id))); }}
                     style={{ background:selectedTasks.size>0?"#a78bfa22":"transparent", border:`1px solid ${selectedTasks.size>0?"#a78bfa":"#252528"}`, borderRadius:8, color:selectedTasks.size>0?"#a78bfa":"#555", fontSize:11, fontWeight:700, padding:"6px 14px", cursor:"pointer", whiteSpace:"nowrap", transition:"all 0.15s" }}>
-                    {selectedTasks.size>0 ? `✓ ${selectedTasks.size} selected` : "Select all"}
+                    {selectedTasks.size>0 ? `${selectedTasks.size} selected` : "Select all"}
                   </button>
-                  <button onClick={()=>setAreaTasks(selectedArea,[...areaTasks].sort((a,b)=>a.label.localeCompare(b.label)))}
+                  <button onClick={()=>setAreaTasks(selectedArea,[...areaTasks].sort((a,b)=>a.label.localeCompare(b.label)).map((t,i)=>({...t,_order:i})))}
                     style={{ background:"transparent", border:"1px solid #252528", borderRadius:8, color:"#555", fontSize:11, fontWeight:600, padding:"6px 12px", cursor:"pointer", letterSpacing:"0.05em" }}
                     onMouseEnter={e=>{e.currentTarget.style.color="#f0ede8";e.currentTarget.style.borderColor="#444";}}
                     onMouseLeave={e=>{e.currentTarget.style.color="#555";e.currentTarget.style.borderColor="#252528";}}>A → Z</button>
+                  {hasManualOrder && (
+                    <button onClick={()=>setAreaTasks(selectedArea, areaTasks.map(t=>{ const {_order,...rest}=t; return rest; }))}
+                      style={{ background:"transparent", border:"1px solid #a78bfa44", borderRadius:8, color:"#a78bfa", fontSize:11, fontWeight:600, padding:"6px 12px", cursor:"pointer", letterSpacing:"0.05em" }}
+                      onMouseEnter={e=>{e.currentTarget.style.background="#a78bfa11";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>Auto-sort</button>
+                  )}
                   <div style={{ flex:1 }} />
                 </div>
               )}
@@ -2685,8 +2696,8 @@ export default function App() {
               <DragList
                 items={filteredTasks}
                 onReorder={newTasks => {
-                  // Merge reordered filtered tasks back into full list preserving non-filtered positions
-                  setAreaTasks(selectedArea, newTasks);
+                  // Manual drag reorder — store with _manualOrder flag to skip auto-sort
+                  setAreaTasks(selectedArea, newTasks.map((t, i) => ({ ...t, _order: i })));
                 }}
                 gap={5}
                 renderItem={(task) => {
@@ -2725,7 +2736,7 @@ export default function App() {
                       return (
                         <button key={cat} onClick={()=>active?setCats(selectedArea,cats.filter(c=>c!==cat)):setCats(selectedArea,[...cats,cat])}
                           style={{ padding:"7px 14px", borderRadius:20, border:`1px solid ${active?"#f0ede8":"#252528"}`, background:active?"#f0ede811":"transparent", color:active?"#f0ede8":"#555", fontWeight:600, fontSize:12, cursor:"pointer" }}>
-                          {active?"✓ ":""}{cat}
+                          {cat}
                         </button>
                       );
                     })}
